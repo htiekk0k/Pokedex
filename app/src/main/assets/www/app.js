@@ -1,0 +1,895 @@
+{
+'use strict';
+const D = window.DEXDATA;
+const N = window.Native || null;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const API = 'https://pokeapi.co/api/v2/';
+const SD = 'https://play.pokemonshowdown.com/data/';
+const DAY = 86400;
+const netUrl = (u, ttl = 30 * DAY) => '/net?ttl=' + ttl + '&u=' + encodeURIComponent(u);
+const imgUrl = u => netUrl(u, -1);
+const memo = new Map();
+function getJSON(u, ttl) {
+  if (!memo.has(u)) {
+    memo.set(u, fetch(netUrl(u, ttl)).then(r => {
+      if (!r.ok) throw new Error(r.status === 504 ? 'offline' : 'HTTP ' + r.status);
+      return r.json();
+    }).catch(err => { memo.delete(u); throw err; }));
+  }
+  return memo.get(u);
+}
+
+const toID = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/♀/g, 'f').replace(/♂/g, 'm').replace(/[^a-z0-9]/g, '');
+const title = slug => String(slug || '').split('-').map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+const pad = n => '#' + String(n).padStart(4, '0');
+const ROMAN_N = {i:1, ii:2, iii:3, iv:4, v:5, vi:6, vii:7, viii:8, ix:9, x:10};
+const genFromName = name => ROMAN_N[String(name || '').split('-')[1]] || 99;
+const idFromUrl = u => parseInt(String(u).split('/').filter(Boolean).pop(), 10);
+const en = arr => (arr || []).filter(x => x.language && x.language.name === 'en');
+
+// ------------------------------------------------------------- settings
+const DEF = {gen: 9, rate: 0.95, pitch: 0.85, autoRead: true, format: 'ou'};
+let S = (() => { try { return {...DEF, ...JSON.parse(localStorage.getItem('dex.settings') || '{}')}; } catch (e) { return {...DEF}; } })();
+const save = () => { try { localStorage.setItem('dex.settings', JSON.stringify(S)); } catch (e) { /* ignore */ } };
+
+// ----------------------------------------------------------------- index
+let INDEX = [], BYID = {}, BYNUM = {}, BASES = {}, NAMEMAP = new Map();
+const REGION_ADJ = {Alola:'Alolan', Galar:'Galarian', Hisui:'Hisuian', Paldea:'Paldean'};
+
+function formeGen(e) {
+  const g = D.genOfNum(e.num), f = e.forme || '';
+  if (!f) return g;
+  if (/^(Mega|Primal)/.test(f)) return Math.max(6, g);
+  if (/Alola/.test(f)) return 7;
+  if (/Galar|Gmax|Hisui/.test(f)) return 8;
+  if (/Paldea/.test(f)) return 9;
+  return g;
+}
+function displayName(e) {
+  if (!e.forme) return e.name;
+  const f = e.forme;
+  for (const [k, adj] of Object.entries(REGION_ADJ)) if (f.startsWith(k)) {
+    const rest = f.slice(k.length).replace(/^-/, '');
+    return adj + ' ' + e.base + (rest ? ' (' + rest.replace(/-/g, ' ') + ')' : '');
+  }
+  if (f.startsWith('Mega')) return 'Mega ' + e.base + f.slice(4).replace(/-/g, ' ');
+  if (f === 'Primal') return 'Primal ' + e.base;
+  if (f === 'Gmax') return 'Gigantamax ' + e.base;
+  return e.base + ' (' + f.replace(/-/g, ' ') + ')';
+}
+function formeLabel(e) {
+  const f = e.forme;
+  for (const [k, adj] of Object.entries(REGION_ADJ)) if (f.startsWith(k)) return adj + ' form' + (f.length > k.length ? ' · ' + f.slice(k.length + 1).replace(/-/g, ' ') : '');
+  if (f.startsWith('Mega')) return 'Mega Evolution' + f.slice(4).replace(/-/g, ' ');
+  if (f === 'Gmax') return 'Gigantamax';
+  return f.replace(/-/g, ' ') + ' form';
+}
+function spriteOf(e) {
+  const pkapi = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/' + e.num + '.png';
+  const sd = 'https://play.pokemonshowdown.com/sprites/gen5/' + toID(e.base) + (e.forme ? '-' + toID(e.forme) : '') + '.png';
+  return e.forme ? [sd, pkapi] : [pkapi, sd];
+}
+const imgTag = (urls, alt, cls = '') =>
+  `<img class="${cls}" loading="lazy" alt="${esc(alt)}" src="${imgUrl(urls[0])}"${urls[1] ? ` data-fb="${imgUrl(urls[1])}"` : ''}>`;
+document.addEventListener('error', ev => {
+  const t = ev.target;
+  if (t && t.tagName === 'IMG' && t.dataset.fb) { const fb = t.dataset.fb; delete t.dataset.fb; t.src = fb; }
+}, true);
+
+async function loadIndex() {
+  const dex = await getJSON(SD + 'pokedex.json', 7 * DAY);
+  const out = [];
+  for (const [id, e] of Object.entries(dex)) {
+    if (!e || !(e.num > 0) || !e.name) continue;
+    if (['CAP', 'Custom', 'Future'].includes(e.isNonstandard)) continue;
+    const forme = e.forme || '';
+    if (/Totem|Starter|Pokestar/.test(forme)) continue;
+    out.push({id, name: e.name, num: e.num, base: e.baseSpecies || e.name, forme,
+      types: e.types || ['Normal'], gen: formeGen(e)});
+  }
+  out.sort((a, b) => a.num - b.num || (a.forme ? 1 : 0) - (b.forme ? 1 : 0));
+  INDEX = out;
+  for (const e of out) {
+    BYID[e.id] = e;
+    if (!e.forme && !BYNUM[e.num]) BYNUM[e.num] = e;
+    (BASES[e.base] = BASES[e.base] || []).push(e);
+    const keys = [norm(e.name)];
+    if (e.forme) {
+      for (const [k, adj] of Object.entries(REGION_ADJ)) if (e.forme === k) keys.push(norm(adj + e.base));
+      if (e.forme.startsWith('Mega')) keys.push(norm('Mega' + e.base + e.forme.slice(4)));
+      if (e.forme === 'Primal') keys.push(norm('Primal' + e.base));
+    }
+    for (const k of keys) if (k && !NAMEMAP.has(k)) NAMEMAP.set(k, e);
+  }
+}
+
+// ---------------------------------------------------------- type badges
+const tb = t => `<span class="tb${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t] || '#888'}">${esc(t)}</span>`;
+
+// ================================================================ HOME
+let query = '', typeFilter = null, limit = 60, homeScroll = 0;
+
+function genPillText() { return 'Gen ' + D.ROMAN[S.gen]; }
+
+function filtered() {
+  const raw = query.trim();
+  const qNum = /^#?\d+$/.test(raw) ? parseInt(raw.replace('#', ''), 10) : null;
+  const q = norm(raw);
+  return INDEX.filter(e => {
+    if (e.gen > S.gen) return false;
+    if (typeFilter && !D.typesInGen(e.types, S.gen).includes(typeFilter)) return false;
+    if (!raw) return true;
+    if (qNum !== null) return e.num === qNum || String(e.num).startsWith(String(qNum));
+    return norm(e.name).includes(q) || norm(displayName(e)).includes(q);
+  });
+}
+
+function renderTypeFilter() {
+  const types = D.typesForGen(S.gen);
+  if (typeFilter && !types.includes(typeFilter)) typeFilter = null;
+  $('#typeFilter').innerHTML = `<button type="button" class="chip" data-type="" aria-pressed="${!typeFilter}">All types</button>` +
+    types.map(t => `<button type="button" class="chip t${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}" data-type="${t}" aria-pressed="${typeFilter === t}">${t}</button>`).join('');
+}
+
+function renderList(reset) {
+  if (reset) limit = 60;
+  const list = filtered();
+  $('#count').textContent = `${list.length.toLocaleString()} Pokémon · Gen ${D.ROMAN[S.gen]} (${D.GENS[S.gen].region})`;
+  $('#list').innerHTML = list.slice(0, limit).map(e => `<li><button type="button" class="dex-row" data-id="${e.id}">
+      ${imgTag(spriteOf(e), e.name)}
+      <span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(e.forme ? displayName(e) : e.name)}${e.forme ? `<small>${esc(formeLabel(e))}</small>` : ''}</span></span>
+      <span class="types">${D.typesInGen(e.types, S.gen).map(tb).join('')}</span></button></li>`).join('');
+  $('#homeMsg').innerHTML = list.length ? '' :
+    `<div class="msg"><b>No match</b>Nothing in Gen ${D.ROMAN[S.gen]} matches “${esc(query)}”. Try another name, or switch generation.</div>`;
+  $('#more').dataset.left = Math.max(0, list.length - limit);
+}
+
+function renderHome() {
+  $('#genPill').textContent = genPillText();
+  renderTypeFilter();
+  renderList(true);
+}
+
+const moreObs = new IntersectionObserver(entries => {
+  if (entries.some(x => x.isIntersecting) && +($('#more').dataset.left || 0) > 0) { limit += 90; renderList(false); }
+}, {rootMargin: '600px'});
+moreObs.observe($('#more'));
+
+// ============================================================== ROUTER
+let pendingAuto = false;
+function go(id, auto) {
+  pendingAuto = !!auto;
+  const h = '#p-' + id;
+  if (location.hash === h) route(); else location.hash = h;
+}
+function route() {
+  const h = location.hash.slice(1);
+  if (h.startsWith('p-')) {
+    if (!$('#home').hidden) homeScroll = window.scrollY;
+    $('#home').hidden = true; $('#detail').hidden = false;
+    ready.then(() => showDetail(h.slice(2))).catch(() => {});
+  } else {
+    stopSpeaking();
+    $('#detail').hidden = true; $('#home').hidden = false;
+    $('#genPill').textContent = genPillText();
+    requestAnimationFrame(() => window.scrollTo(0, homeScroll));
+  }
+}
+window.addEventListener('hashchange', route);
+
+// ============================================================= DETAIL
+let cur = null, token = 0;
+
+function pickVariety(species, e) {
+  const vs = species.varieties || [];
+  const def = vs.find(v => v.is_default) || vs[0];
+  if (!e.forme) return def;
+  const slug = e.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.'’:%]/g, '')
+    .replace(/\s+/g, '-').replace(/-+/g, '-');
+  const fslug = e.forme.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return vs.find(v => v.pokemon.name === slug) || vs.find(v => v.pokemon.name.startsWith(slug + '-')) ||
+    vs.find(v => v.pokemon.name.includes(fslug)) || def;
+}
+
+// Values as they were in the selected generation (PokéAPI keeps the history).
+function pastPick(past, gen) {
+  const list = (past || []).map(p => ({g: genFromName(p.generation && p.generation.name), p})).filter(x => x.g >= gen).sort((a, b) => a.g - b.g);
+  return list.length ? list[0].p : null;
+}
+function typesAt(p, gen) {
+  const past = pastPick(p.past_types, gen);
+  return (past ? past.types : p.types).slice().sort((a, b) => a.slot - b.slot).map(x => title(x.type.name));
+}
+function abilitiesAt(p, gen) {
+  const bySlot = {};
+  for (const a of p.abilities || []) bySlot[a.slot] = a;
+  const past = pastPick(p.past_abilities, gen);
+  if (past) for (const a of past.abilities || []) { if (a.ability) bySlot[a.slot] = a; else delete bySlot[a.slot]; }
+  let list = Object.values(bySlot).sort((a, b) => a.slot - b.slot);
+  if (gen < 5) list = list.filter(a => !a.is_hidden);
+  return list;
+}
+function statsAt(p, gen) {
+  const m = {};
+  for (const s of p.stats || []) m[s.stat.name] = {base: s.base_stat, effort: s.effort};
+  const past = pastPick(p.past_stats, gen);
+  if (past) for (const s of past.stats || []) if (m[s.stat.name]) m[s.stat.name] = {...m[s.stat.name], base: s.base_stat};
+  return m;
+}
+const vgGen = vg => D.VG_GEN[vg] || 9;
+const verGen = v => D.VERSION_GEN[v] || 9;
+
+function flavorFor(species, gen) {
+  const all = en(species.flavor_text_entries).map(f => ({v: f.version.name, g: verGen(f.version.name),
+    text: f.flavor_text.replace(/[\f\n\r­]+/g, ' ').replace(/\s+/g, ' ').replace(/pok[eé]mon/gi, 'Pokémon').trim()}));
+  let list = all.filter(f => f.g === gen), note = '';
+  if (!list.length && all.length) {
+    const older = all.filter(f => f.g < gen).sort((a, b) => b.g - a.g);
+    const g = older.length ? older[0].g : Math.min(...all.map(f => f.g));
+    list = all.filter(f => f.g === g);
+    note = `No English entry in Gen ${D.ROMAN[gen]} games. Showing Gen ${D.ROMAN[g]}.`;
+  }
+  const seen = new Set();
+  list = list.filter(f => !seen.has(f.v) && seen.add(f.v));
+  return {list, note};
+}
+const genusOf = sp => (en(sp.genera)[0] || {}).genus || '';
+
+async function showDetail(id) {
+  const e = BYID[id];
+  if (!e) { location.hash = ''; return; }
+  const my = ++token;
+  stopSpeaking();
+  window.scrollTo(0, 0);
+  const keepTab = cur && cur.e.base === e.base ? cur.tab : 'entry';
+  cur = {e, tab: keepTab, species: null, pokemon: null, version: null, vg: null, fmt: null, sets: null};
+  $('#barTitle').textContent = displayName(e);
+  $('#genPill2').textContent = genPillText();
+  $('#detailBody').innerHTML = heroHTML() + `<div class="pane"><div class="skeleton"></div><div class="skeleton"></div></div>`;
+  try {
+    const species = await getJSON(API + 'pokemon-species/' + e.num);
+    const v = pickVariety(species, e);
+    const pokemon = await getJSON(v.pokemon.url);
+    if (my !== token) return;
+    cur.species = species; cur.pokemon = pokemon;
+    renderDetail();
+    if (pendingAuto) { pendingAuto = false; if (S.autoRead) setTimeout(speakEntry, 250); }
+  } catch (err) {
+    if (my !== token) return;
+    $('#detailBody').innerHTML = heroHTML() + `<div class="pane">${errorCard(err, 'retry-detail')}</div>`;
+  }
+}
+
+function errorCard(err, act) {
+  const off = String(err && err.message) === 'offline';
+  return `<div class="msg"><b>${off ? 'You’re offline' : 'Couldn’t load this'}</b>${off
+    ? 'This hasn’t been saved on your phone yet. Connect to the internet and try again.'
+    : 'The data source didn’t answer properly. Try again in a moment.'}<br><br>
+    <button type="button" class="btn" data-act="${act}">Try again</button></div>`;
+}
+
+function heroHTML() {
+  const {e, species, pokemon} = cur;
+  const types = pokemon ? typesAt(pokemon, S.gen) : D.typesInGen(e.types, S.gen);
+  const other = pokemon && pokemon.sprites && pokemon.sprites.other;
+  const art = other && ((other['official-artwork'] || {}).front_default || (other.home || {}).front_default);
+  const urls = art ? [art, spriteOf(e)[0]] : spriteOf(e);
+  const forms = (BASES[e.base] || []).filter(f => f.gen <= S.gen);
+  const genus = species ? genusOf(species) : '';
+  return `<section class="hero">
+    <div class="screen-frame">
+      <div class="lcd" style="--tint:${D.TYPE_COLOR[types[0]] || '#cfd8dc'}">
+        <span class="dexno">${pad(e.num)}</span>${imgTag(urls, e.name)}
+      </div>
+      <div class="frame-foot"><span class="dot" id="ttsDot"></span><span class="grille"></span></div>
+    </div>
+    <h2>${esc(displayName(e))}</h2>
+    <p class="genus">${esc(genus || ' ')}</p>
+    <div class="types">${types.map(tb).join('')}</div>
+    ${e.gen > S.gen ? `<p class="genus">Not in Gen ${D.ROMAN[S.gen]} games (introduced in Gen ${D.ROMAN[e.gen]}).</p>` : ''}
+    <div class="speak-row"><button type="button" class="speak" id="speakBtn" data-act="speak" ${species ? '' : 'disabled'}>
+      <svg><use href="#i-speak"/></svg><span>Read entry aloud</span></button></div>
+    ${forms.length > 1 ? `<div class="forms scroll">${forms.map(f => `<button type="button" class="chip" data-go="${f.id}" aria-pressed="${f.id === e.id}">${esc(f.forme ? formeLabel(f).replace(' form', '') : 'Base')}</button>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+const TABS = [['entry', 'Entry'], ['stats', 'Stats'], ['moves', 'Moves'], ['smogon', 'Smogon'], ['evo', 'Evolution']];
+function renderDetail() {
+  $('#detailBody').innerHTML = heroHTML() +
+    `<nav class="tabs scroll" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${cur.tab === k}">${l}</button>`).join('')}</nav>
+     <div class="pane" id="pane"></div>`;
+  renderPane();
+}
+function renderPane() {
+  const pane = $('#pane');
+  if (!pane) return;
+  $$('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === cur.tab));
+  ({entry: paneEntry, stats: paneStats, moves: paneMoves, smogon: paneSmogon, evo: paneEvo})[cur.tab](pane);
+}
+
+// ------------------------------------------------------------ Entry tab
+const EGG = {monster:'Monster', water1:'Water 1', water2:'Water 2', water3:'Water 3', bug:'Bug', flying:'Flying',
+  ground:'Field', fairy:'Fairy', plant:'Grass', humanshape:'Human-Like', mineral:'Mineral', indeterminate:'Amorphous',
+  ditto:'Ditto', dragon:'Dragon', 'no-eggs':'Undiscovered'};
+const GROWTH = {'slow-then-very-fast':'Erratic', 'fast-then-very-slow':'Fluctuating'};
+const verLabel = v => D.VERSION_LABEL[v] || title(v);
+
+function paneEntry(pane) {
+  const {e, species: sp, pokemon: p} = cur;
+  const gen = S.gen;
+  const fl = flavorFor(sp, gen);
+  if (!cur.version || !fl.list.find(f => f.v === cur.version)) cur.version = fl.list.length ? fl.list[fl.list.length - 1].v : null;
+  const shown = fl.list.find(f => f.v === cur.version);
+  const types = typesAt(p, gen);
+  const st = statsAt(p, gen);
+  const m = p.height / 10, kg = p.weight / 10;
+  const inches = Math.round(m * 39.3701);
+  const abil = abilitiesAt(p, gen);
+  const ev = D.STAT_KEYS.filter(k => st[k] && st[k].effort > 0).map(k => `${st[k].effort} ${D.STAT_LABEL[k]}`).join(', ') || '—';
+  const female = sp.gender_rate;
+  const gender = female < 0 ? 'Genderless' : `<span style="color:#2a6fd6">${100 - female * 12.5}% male</span>, <span style="color:#c2185b">${female * 12.5}% female</span>`;
+  const cr = sp.capture_rate;
+
+  pane.innerHTML = `
+    <section class="card">
+      <h3>Pokédex entry</h3>
+      ${fl.list.length > 1 ? `<div class="games scroll">${fl.list.map(f => `<button type="button" class="chip" data-version="${f.v}" aria-pressed="${f.v === cur.version}">${esc(verLabel(f.v))}</button>`).join('')}</div>` : ''}
+      <p class="entry-text">${shown ? esc(shown.text) : 'No English Pokédex entry for this Pokémon yet.'}</p>
+      ${shown && fl.list.length === 1 ? `<p class="note">${esc(verLabel(shown.v))}</p>` : ''}
+      ${fl.note ? `<p class="note">${esc(fl.note)}</p>` : ''}
+    </section>
+    <section class="card"><h3>Pokédex data</h3><table class="kv"><tbody>
+      <tr><th>National №</th><td>${pad(e.num).slice(1)}</td></tr>
+      <tr><th>Type</th><td><span class="types">${types.map(tb).join('')}</span></td></tr>
+      <tr><th>Species</th><td>${esc(genusOf(sp) || '—')}</td></tr>
+      <tr><th>Height</th><td>${m.toFixed(1)} m (${Math.floor(inches / 12)}′${String(inches % 12).padStart(2, '0')}″)</td></tr>
+      <tr><th>Weight</th><td>${kg.toFixed(1)} kg (${(kg * 2.20462).toFixed(1)} lbs)</td></tr>
+      ${gen >= 3 ? `<tr><th>Abilities</th><td>${abil.map((a, i) => `<div><button type="button" class="linkish" data-ability="${a.ability.name}">${i + 1}. ${esc(title(a.ability.name))}</button>${a.is_hidden ? ' <small>(hidden ability)</small>' : ''}<span class="ability-desc" id="ab-${a.ability.name}"></span></div>`).join('') || '—'}</td></tr>` : ''}
+    </tbody></table></section>
+    <section class="card"><h3>Training</h3><table class="kv"><tbody>
+      <tr><th>EV yield</th><td>${ev}</td></tr>
+      <tr><th>Catch rate</th><td>${cr} <small>(${(cr / 3 / 255 * 100).toFixed(1)}% with a Poké Ball at full HP)</small></td></tr>
+      ${gen >= 2 ? `<tr><th>Base friendship</th><td>${sp.base_happiness ?? '—'}</td></tr>` : ''}
+      <tr><th>Base Exp.</th><td>${p.base_experience ?? '—'}</td></tr>
+      <tr><th>Growth rate</th><td>${esc(GROWTH[sp.growth_rate && sp.growth_rate.name] || title(sp.growth_rate && sp.growth_rate.name))}</td></tr>
+    </tbody></table></section>
+    ${gen >= 2 ? `<section class="card"><h3>Breeding</h3><table class="kv"><tbody>
+      <tr><th>Egg groups</th><td>${(sp.egg_groups || []).map(g => EGG[g.name] || title(g.name)).join(', ') || '—'}</td></tr>
+      <tr><th>Gender</th><td>${gender}</td></tr>
+      <tr><th>Egg cycles</th><td>${sp.hatch_counter ?? '—'}</td></tr>
+    </tbody></table></section>` : ''}
+    <section class="card"><h3>Type defenses <small>damage taken in Gen ${D.ROMAN[gen]}</small></h3>${defensesHTML(types, gen)}</section>`;
+}
+
+function defensesHTML(types, gen) {
+  const lab = {0: '0', 0.25: '¼', 0.5: '½', 1: '', 2: '2', 4: '4'};
+  const cls = {0: 'x0', 0.25: 'x25', 0.5: 'x5', 1: 'x1', 2: 'x2', 4: 'x4'};
+  return `<div class="defs">${D.typesForGen(gen).map(t => {
+    const m = D.effectiveness(t, types, gen);
+    return `<div class="def"><span class="tn${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}">${t.slice(0, 3)}</span><span class="m ${cls[m] || 'x1'}">${lab[m] ?? m}</span></div>`;
+  }).join('')}</div><p class="note">2 = super effective, ½ = resisted, 0 = immune. Abilities like Levitate aren’t counted.</p>`;
+}
+
+async function showAbility(name) {
+  const el = document.getElementById('ab-' + name);
+  if (!el) return;
+  if (el.textContent) { el.textContent = ''; return; }
+  el.textContent = 'Loading…';
+  try {
+    const a = await getJSON(API + 'ability/' + name);
+    const eff = en(a.effect_entries)[0];
+    const fl = en(a.flavor_text_entries).pop();
+    el.textContent = (eff && eff.short_effect) || (fl && fl.flavor_text.replace(/\s+/g, ' ')) || 'No description.';
+  } catch (err) { el.textContent = 'Couldn’t load the description.'; }
+}
+
+// ------------------------------------------------------------ Stats tab
+function statColor(v) { return v < 30 ? '#f34444' : v < 60 ? '#ff7f0f' : v < 90 ? '#ffc93c' : v < 120 ? '#a0e515' : v < 150 ? '#23cd5e' : '#00c2b8'; }
+function paneStats(pane) {
+  const st = statsAt(cur.pokemon, S.gen);
+  let total = 0;
+  const rows = D.STAT_KEYS.map(k => {
+    const b = st[k] ? st[k].base : 0;
+    total += b;
+    let min, max;
+    if (k === 'hp') { min = b === 1 ? 1 : 2 * b + 110; max = b === 1 ? 1 : 2 * b + 204; }
+    else { min = Math.floor((2 * b + 5) * 0.9); max = Math.floor((2 * b + 99) * 1.1); }
+    return `<div class="stat"><span class="k">${D.STAT_LABEL[k]}</span><span class="v">${b}</span>
+      <span class="bar-bg"><span class="bar-fg" style="display:block;width:${Math.min(100, b / 255 * 100).toFixed(1)}%;background:${statColor(b)}"></span></span>
+      <span class="mm">${min}–${max}</span></div>`;
+  }).join('');
+  pane.innerHTML = `<section class="card"><h3>Base stats</h3>${rows}
+      <div class="stat total"><span class="k">Total</span><span class="v">${total}</span><span></span><span class="mm">Min–Max</span></div>
+      <p class="note">Min–Max are level 100 stats: hindering nature with 0 EVs and 0 IVs, up to a helpful nature with 252 EVs and 31 IVs.</p>
+      ${S.gen === 1 ? '<p class="note">In Gen 1, Sp. Atk and Sp. Def were one “Special” stat. Both are shown as they are today.</p>' : ''}
+      ${S.gen <= 2 ? '<p class="note">Gen 1–2 games used DVs and stat experience instead of IVs and EVs, so in-game stats differ slightly.</p>' : ''}
+    </section>
+    <section class="card"><h3>Type defenses</h3>${defensesHTML(typesAt(cur.pokemon, S.gen), S.gen)}</section>`;
+}
+
+// ------------------------------------------------------------ Moves tab
+const PREF_VG = {1:'yellow', 2:'crystal', 3:'emerald', 4:'platinum', 5:'black-2-white-2', 6:'omega-ruby-alpha-sapphire',
+  7:'ultra-sun-ultra-moon', 8:'sword-shield', 9:'scarlet-violet'};
+const METHOD = {'level-up':'Level up', machine:'TM / HM / TR', egg:'Egg moves', tutor:'Move tutor'};
+
+function vgsIn(p, gen) {
+  const s = new Set();
+  for (const m of p.moves || []) for (const d of m.version_group_details) if (vgGen(d.version_group.name) === gen) s.add(d.version_group.name);
+  return [...s].sort((a, b) => (D.VG_ORDER[a] ?? 999) - (D.VG_ORDER[b] ?? 999));
+}
+
+async function paneMoves(pane) {
+  pane.innerHTML = '<div class="skeleton"></div>';
+  const my = token;
+  let p = cur.pokemon, note = '';
+  if (!vgsIn(p, S.gen).length && cur.e.forme) {
+    try {
+      const def = (cur.species.varieties || []).find(v => v.is_default);
+      if (def) { const base = await getJSON(def.pokemon.url); if (vgsIn(base, S.gen).length) { p = base; note = `Showing ${cur.e.base}’s moves. This form has no separate move list for these games.`; } }
+    } catch (err) { /* keep form data */ }
+  }
+  let movedb = {};
+  try { movedb = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { /* names only */ }
+  if (my !== token || cur.tab !== 'moves') return;
+  const vgs = vgsIn(p, S.gen);
+  if (!vgs.length) {
+    pane.innerHTML = `<div class="msg"><b>No moves listed</b>PokéAPI has no Gen ${D.ROMAN[S.gen]} move data for this Pokémon. It may not appear in those games.</div>`;
+    return;
+  }
+  if (!vgs.includes(cur.vg)) cur.vg = vgs.includes(PREF_VG[S.gen]) ? PREF_VG[S.gen] : vgs[vgs.length - 1];
+  const groups = {};
+  for (const m of p.moves) for (const d of m.version_group_details) {
+    if (d.version_group.name !== cur.vg) continue;
+    const meth = d.move_learn_method.name;
+    (groups[meth] = groups[meth] || []).push({name: m.move.name, level: d.level_learned_at});
+  }
+  const order = ['level-up', 'machine', 'egg', 'tutor', ...Object.keys(groups).filter(k => !METHOD[k])];
+  const sections = order.filter(k => groups[k] && groups[k].length).map(k => {
+    const seen = new Set();
+    const list = groups[k].filter(r => { const key = r.name + '|' + (k === 'level-up' ? r.level : ''); return !seen.has(key) && seen.add(key); });
+    list.sort((a, b) => k === 'level-up' ? a.level - b.level || a.name.localeCompare(b.name) : moveName(movedb, a.name).localeCompare(moveName(movedb, b.name)));
+    const showLv = k === 'level-up';
+    return `<section class="card"><h3>${METHOD[k] || title(k)} <small>${list.length}</small></h3>
+      <table class="mtable"><thead><tr>${showLv ? '<th>Lv</th>' : ''}<th>Move</th><th>Type</th><th>Cat</th><th class="r">Pwr</th><th class="r">Acc</th></tr></thead>
+      <tbody>${list.map(r => moveRow(movedb, r, showLv)).join('')}</tbody></table></section>`;
+  }).join('');
+  pane.innerHTML = `<section class="card"><div class="selrow"><label for="vgSel"><b>Game</b></label>
+      <select id="vgSel">${vgs.map(v => `<option value="${v}" ${v === cur.vg ? 'selected' : ''}>${esc(D.VG_LABEL[v] || title(v))}</option>`).join('')}</select></div>
+      ${note ? `<p class="note">${esc(note)}</p>` : ''}<p class="note">Tap a move for its effect. Power and accuracy are from the latest games.</p></section>${sections}`;
+}
+function moveName(db, slug) { const m = db[slug.replace(/-/g, '')]; return m ? m.name : title(slug); }
+function moveInfo(db, slug, gen) {
+  const id = slug.replace(/-/g, '');
+  const m = db[id] || {};
+  let type = m.type || '';
+  const hist = D.MOVE_TYPE_HISTORY[id];
+  if (hist && gen <= hist[0]) type = hist[1];
+  let cat = m.category || '';
+  if (gen <= 3 && cat && cat !== 'Status') cat = D.PHYSICAL_TYPES.has(type) ? 'Physical' : 'Special';
+  return {name: m.name || title(slug), type, cat, bp: m.basePower ? m.basePower : '—',
+    acc: m.accuracy === true ? '—' : (m.accuracy ?? '—'), pp: m.pp, pri: m.priority};
+}
+function moveRow(db, r, showLv) {
+  const m = moveInfo(db, r.name, S.gen);
+  return `<tr class="mrow" data-move="${r.name}">${showLv ? `<td class="lv">${r.level || 'Evo'}</td>` : ''}
+    <td class="mv">${esc(m.name)}</td><td>${m.type ? tb(m.type) : ''}</td>
+    <td>${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}</td>
+    <td class="r">${m.bp}</td><td class="r">${m.acc}</td></tr>`;
+}
+async function toggleMove(tr) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('expand')) { next.remove(); return; }
+  const slug = tr.dataset.move;
+  const ex = document.createElement('tr');
+  ex.className = 'expand';
+  ex.innerHTML = `<td colspan="${tr.children.length}">Loading…</td>`;
+  tr.after(ex);
+  let db = {};
+  try { db = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { /* ignore */ }
+  const info = moveInfo(db, slug, S.gen);
+  let text = '';
+  try {
+    const mv = await getJSON(API + 'move/' + slug);
+    const eff = en(mv.effect_entries)[0];
+    text = eff ? eff.short_effect.replace(/\$effect_chance/g, mv.effect_chance ?? '') : ((en(mv.flavor_text_entries).pop() || {}).flavor_text || '');
+  } catch (err) { text = 'Couldn’t load the description (offline?).'; }
+  ex.firstElementChild.innerHTML = `${info.cat ? `<b>${info.cat}</b>` : ''}${info.pp ? ` · PP ${info.pp}` : ''}${info.pri ? ` · Priority ${info.pri > 0 ? '+' : ''}${info.pri}` : ''}<br>${esc(text.replace(/\s+/g, ' '))}`;
+}
+
+// ----------------------------------------------------------- Smogon tab
+const STATN = {hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe'};
+const spread = o => Object.entries(o || {}).filter(([, n]) => n !== undefined && n !== null).map(([k, n]) => `${n} ${STATN[k] || k}`).join(' / ');
+const fmtVal = v => Array.isArray(v) ? v.map(fmtVal).join(' / ') : (v && typeof v === 'object') ? spread(v) : String(v);
+const fmtSpread = v => Array.isArray(v) ? v.map(spread).join('  or  ') : spread(v);
+const first = v => Array.isArray(v) ? first(v[0]) : v;
+
+function pickFormat(formats) {
+  const want = cur.fmt || S.format;
+  if (formats.includes(want)) return want;
+  if (want === 'vgc') { const v = formats.filter(f => f.startsWith('vgc')).sort().pop(); if (v) return v; }
+  if (formats.includes('ou')) return 'ou';
+  return formats[0];
+}
+const smogonSlug = name => name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.'’:%]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+async function paneSmogon(pane) {
+  pane.innerHTML = '<div class="skeleton"></div>';
+  const my = token, e = cur.e, gen = S.gen;
+  let data;
+  try { data = await getJSON(`https://data.pkmn.cc/sets/gen${gen}.json`, 3 * DAY); }
+  catch (err) { if (my === token && cur.tab === 'smogon') pane.innerHTML = errorCard(err, 'retry-pane'); return; }
+  if (my !== token || cur.tab !== 'smogon') return;
+  const formats = Object.keys(data).filter(t => data[t] && typeof data[t] === 'object' && data[t][e.name]);
+  const dexLink = `https://www.smogon.com/dex/${D.GENS[gen].smogon}/pokemon/${smogonSlug(e.name)}/`;
+  const linkBtn = `<button type="button" class="btn ghost" data-url="${dexLink}"><svg><use href="#i-ext"/></svg>Open on Smogon</button>`;
+  if (!formats.length) {
+    pane.innerHTML = `<div class="msg"><b>No Smogon sets</b>Smogon has no Gen ${D.ROMAN[gen]} sets for ${esc(displayName(e))}.<br><br>${linkBtn}</div>`;
+    return;
+  }
+  const fmt = cur.fmt = pickFormat(formats);
+  const sets = cur.sets = data[fmt][e.name];
+  pane.innerHTML = `<section class="card"><h3>Format <small>Gen ${D.ROMAN[gen]}</small></h3>
+      <div class="games scroll">${formats.map(f => `<button type="button" class="chip" data-fmt="${f}" aria-pressed="${f === fmt}">${esc(D.tierLabel(f))}</button>`).join('')}</div>
+      <p class="note">Sets written by Smogon University contributors (via data.pkmn.cc).</p></section>
+    ${Object.entries(sets).map(([setName, s], i) => setCard(setName, s, i)).join('')}
+    <div style="text-align:center">${linkBtn}</div>`;
+}
+function setCard(setName, s, i) {
+  const line = (k, v) => v === undefined || v === null || v === '' ? '' : `<div><b>${k}</b>${esc(v)}</div>`;
+  return `<section class="card setcard"><h4>${esc(setName)}</h4><div class="set-lines">
+      ${line('Item', s.item !== undefined ? fmtVal(s.item) : '')}
+      ${line('Ability', s.ability !== undefined ? fmtVal(s.ability) : '')}
+      ${line('Nature', s.nature !== undefined ? fmtVal(s.nature) : '')}
+      ${line('Tera', s.teratypes !== undefined ? fmtVal(s.teratypes) : '')}
+      ${line('EVs', s.evs ? fmtSpread(s.evs) : '')}
+      ${line('IVs', s.ivs ? fmtSpread(s.ivs) : '')}
+      ${line('Level', s.level !== undefined ? fmtVal(s.level) : '')}
+    </div>
+    <ol class="set-moves">${(s.moves || []).map(m => `<li>${esc(Array.isArray(m) ? m.join(' / ') : m)}</li>`).join('')}</ol>
+    <div class="set-actions"><button type="button" class="btn" data-copyset="${i}"><svg><use href="#i-copy"/></svg>Copy for Showdown</button></div>
+  </section>`;
+}
+function showdownExport(s) {
+  const out = [cur.e.name + (s.item ? ' @ ' + first(s.item) : '')];
+  if (s.ability) out.push('Ability: ' + first(s.ability));
+  if (s.level) out.push('Level: ' + first(s.level));
+  if (s.teratypes) out.push('Tera Type: ' + first(s.teratypes));
+  if (s.evs) out.push('EVs: ' + spread(first(s.evs)));
+  if (s.nature) out.push(first(s.nature) + ' Nature');
+  if (s.ivs) out.push('IVs: ' + spread(first(s.ivs)));
+  for (const m of s.moves || []) out.push('- ' + first(m));
+  return out.join('\n');
+}
+function copyText(t) {
+  if (N) N.copy(t);
+  else if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {});
+}
+
+// -------------------------------------------------------- Evolution tab
+function evoCond(details) {
+  return (details || []).map(d => {
+    const parts = [];
+    const trig = d.trigger && d.trigger.name;
+    if (trig === 'level-up') parts.push(d.min_level ? 'Level ' + d.min_level : 'Level up');
+    else if (trig === 'trade') parts.push('Trade');
+    else if (trig === 'use-item' && d.item) parts.push('Use ' + title(d.item.name));
+    else if (trig) parts.push(title(trig));
+    if (d.held_item) parts.push('holding ' + title(d.held_item.name));
+    if (d.min_happiness) parts.push('high friendship');
+    if (d.min_affection) parts.push('high affection');
+    if (d.min_beauty) parts.push('high Beauty');
+    if (d.known_move) parts.push('knowing ' + title(d.known_move.name));
+    if (d.known_move_type) parts.push('knowing a ' + title(d.known_move_type.name) + '-type move');
+    if (d.location) parts.push('at ' + title(d.location.name));
+    if (d.time_of_day) parts.push('(' + d.time_of_day + ')');
+    if (d.gender === 1) parts.push('(female)');
+    if (d.gender === 2) parts.push('(male)');
+    if (d.needs_overworld_rain) parts.push('while raining');
+    if (d.party_species) parts.push('with ' + title(d.party_species.name) + ' in party');
+    if (d.party_type) parts.push('with a ' + title(d.party_type.name) + '-type in party');
+    if (d.trade_species) parts.push('for ' + title(d.trade_species.name));
+    if (d.turn_upside_down) parts.push('holding the console upside down');
+    if (d.relative_physical_stats === 1) parts.push('Atk > Def');
+    if (d.relative_physical_stats === -1) parts.push('Atk < Def');
+    if (d.relative_physical_stats === 0) parts.push('Atk = Def');
+    return parts.join(', ');
+  }).filter(Boolean).join(' or ');
+}
+async function paneEvo(pane) {
+  pane.innerHTML = '<div class="skeleton"></div>';
+  const my = token;
+  let chain;
+  try { chain = await getJSON(cur.species.evolution_chain.url); }
+  catch (err) { if (my === token && cur.tab === 'evo') pane.innerHTML = errorCard(err, 'retry-pane'); return; }
+  if (my !== token || cur.tab !== 'evo') return;
+  const curNum = cur.e.num;
+  const visible = n => { const e = BYNUM[idFromUrl(n.species.url)]; return !!e && e.gen <= S.gen; };
+  const mon = n => {
+    const num = idFromUrl(n.species.url), e = BYNUM[num];
+    if (!e) return '';
+    return `<button type="button" class="evo-mon${num === curNum ? ' cur' : ''}" data-go="${e.id}">${imgTag(spriteOf(e), e.name)}<span>${esc(e.name)}</span><small>${pad(num)}</small></button>`;
+  };
+  const node = n => {
+    const kids = (n.evolves_to || []).filter(visible);
+    if (!kids.length) return `<div class="evo-branch">${mon(n)}</div>`;
+    if (kids.length === 1) return `<div class="evo-branch">${mon(n)}<div class="evo-arrow">↓</div><div class="evo-cond">${esc(evoCond(kids[0].evolution_details))}</div>${node(kids[0])}</div>`;
+    return `<div class="evo-branch">${mon(n)}<div class="evo-arrow">↓</div><div class="evo-stage">${kids.map(k => `<div class="evo-branch"><div class="evo-cond">${esc(evoCond(k.evolution_details))}</div>${node(k)}</div>`).join('')}</div></div>`;
+  };
+  const root = chain.chain;
+  const single = !(root.evolves_to || []).filter(visible).length;
+  pane.innerHTML = `<section class="card"><h3>Evolution chart</h3>${visible(root) ? `<div class="evo">${node(root)}</div>` : ''}
+    ${single ? '<p class="note">This Pokémon does not evolve' + (S.gen < 9 ? ` in Gen ${D.ROMAN[S.gen]} games` : '') + '.</p>' : ''}
+    ${cur.e.forme ? '<p class="note">Regional and other forms can evolve differently. This chart shows the species’ main line.</p>' : ''}</section>`;
+}
+
+// ============================================================ SPEECH
+let speaking = false;
+function setSpeaking(on) {
+  speaking = on;
+  const b = $('#speakBtn'), dot = $('#ttsDot');
+  if (b) { b.classList.toggle('on', on); b.innerHTML = on ? '<svg><use href="#i-stop"/></svg><span>Stop</span>' : '<svg><use href="#i-speak"/></svg><span>Read entry aloud</span>'; }
+  if (dot) dot.classList.toggle('on', on);
+}
+function speak(text) {
+  if (N) { if (N.speak(text, S.rate, S.pitch)) setSpeaking(true); return; }
+  if (window.speechSynthesis) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = S.rate; u.pitch = S.pitch; u.onend = () => setSpeaking(false);
+    speechSynthesis.cancel(); speechSynthesis.speak(u); setSpeaking(true);
+  }
+}
+function stopSpeaking() {
+  if (!speaking) return;
+  if (N) N.stopSpeaking(); else if (window.speechSynthesis) speechSynthesis.cancel();
+  setSpeaking(false);
+}
+function speakEntry() {
+  if (!cur || !cur.species) return;
+  if (speaking) { stopSpeaking(); return; }
+  const fl = flavorFor(cur.species, S.gen);
+  const shown = fl.list.find(f => f.v === cur.version) || fl.list[fl.list.length - 1];
+  const genus = genusOf(cur.species);
+  const parts = [displayName(cur.e) + '.'];
+  if (genus) parts.push('The ' + genus + '.');
+  if (shown) parts.push(shown.text);
+  speak(parts.join(' '));
+}
+
+// ============================================================ FINDING
+function lev(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  const row = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return row[b.length];
+}
+// lines: [{t: text, w: weight}] → ranked [{e, s}]
+function findInText(lines, allowNumbers) {
+  const score = new Map();
+  const add = (e, w) => score.set(e, (score.get(e) || 0) + w);
+  for (const {t, w} of lines) {
+    const words = String(t).split(/[\s,;!?()[\]{}"/|]+/).filter(Boolean);
+    const used = new Array(words.length).fill(false);
+    for (let n = Math.min(4, words.length); n >= 1; n--) {
+      for (let i = 0; i + n <= words.length; i++) {
+        if (used.slice(i, i + n).some(Boolean)) continue;
+        const key = norm(words.slice(i, i + n).join(''));
+        if (key.length < 3) continue;
+        const e = NAMEMAP.get(key);
+        if (e) { add(e, w + n * 0.01); for (let k = i; k < i + n; k++) used[k] = true; }
+      }
+    }
+    if (allowNumbers) {
+      const m = String(t).match(/\b(\d{1,4})\b/);
+      if (m && BYNUM[+m[1]]) add(BYNUM[+m[1]], w * 0.9);
+    }
+  }
+  if (!score.size) {
+    const names = [...NAMEMAP.entries()].filter(([, e]) => !e.forme);
+    for (const {t, w} of lines) {
+      for (const word of String(t).split(/\s+/)) {
+        const k = norm(word);
+        if (k.length < 5) continue;
+        const maxD = k.length >= 8 ? 2 : 1;
+        for (const [nk, e] of names) {
+          if (Math.abs(nk.length - k.length) > maxD) continue;
+          if (lev(k, nk) <= maxD) add(e, w * 0.5);
+        }
+      }
+    }
+  }
+  return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([e, s]) => ({e, s}));
+}
+
+function handleFound(cands, rawText) {
+  hideBusy();
+  if (!cands.length) {
+    openSheet(`<h2>No Pokémon found</h2>
+      <p>I couldn’t find a Pokémon name in that.</p>
+      ${rawText ? `<h3>What I read</h3><div class="ocr-text">${esc(rawText.slice(0, 600))}</div>` : ''}
+      <h3>Tips</h3><ul class="steps"><li>For cards, fill the frame with the card’s name at the top and keep it sharp.</li>
+      <li>For plushies, figures or anything without a name, use <b>Lens</b>.</li></ul>`);
+    return;
+  }
+  if (cands.length === 1 || cands[0].s >= cands[1].s * 1.3) { closeSheet(); go(cands[0].e.id, true); return; }
+  openSheet(`<h2>Which one?</h2><div class="pick-list">${cands.slice(0, 8).map(({e}) => `<button type="button" class="dex-row" data-pick="${e.id}">
+      ${imgTag(spriteOf(e), e.name)}<span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(displayName(e))}</span></span>
+      <span class="types">${D.typesInGen(e.types, S.gen).map(tb).join('')}</span></button>`).join('')}</div>`);
+}
+
+function textToLines(text) {
+  const lines = [];
+  for (const m of String(text).matchAll(/https?:\/\/\S+/g)) {
+    try { const q = new URL(m[0]).searchParams.get('q'); if (q) lines.push({t: q, w: 2}); } catch (err) { /* ignore */ }
+  }
+  String(text).replace(/https?:\/\/\S+/g, ' ').split(/\n+/).forEach(l => { if (l.trim()) lines.push({t: l, w: 1}); });
+  return lines;
+}
+
+function handleNative(ev) {
+  switch (ev.type) {
+    case 'busy': showBusy(ev.label || 'Working…'); break;
+    case 'cancel': hideBusy(); break;
+    case 'error': hideBusy(); if (N) N.toast(ev.message || 'Something went wrong'); break;
+    case 'tts': setSpeaking(ev.state === 'start'); break;
+    case 'ocr': {
+      const lines = ev.lines || [];
+      const maxH = Math.max(1, ...lines.map(l => l.h || 0));
+      const weighted = lines.map(l => ({t: l.t, w: 0.2 + (l.h || 0) / maxH}));
+      handleFound(findInText(weighted, false), lines.map(l => l.t).join('\n'));
+      break;
+    }
+    case 'voice': {
+      const res = ev.results || [];
+      handleFound(findInText(res.map((t, i) => ({t, w: 1 / (i + 1)})), true), res.join('\n'));
+      break;
+    }
+    case 'text': handleFound(findInText(textToLines(ev.text || ''), false), ev.text || ''); break;
+  }
+}
+
+// ======================================================= SHEETS & BUSY
+function openSheet(html) { $('#sheetBody').innerHTML = html; $('#sheet').hidden = false; }
+function closeSheet() { $('#sheet').hidden = true; $('#sheetBody').innerHTML = ''; }
+function showBusy(label) { $('#busyLabel').textContent = label; $('#busy').hidden = false; }
+function hideBusy() { $('#busy').hidden = true; }
+function alertSheet(msg) { openSheet(`<h2>Pokédex</h2><p>${esc(msg)}</p>`); }
+
+const FORMAT_CHOICES = [['ou', 'OU'], ['ubers', 'Ubers'], ['uu', 'UU'], ['ru', 'RU'], ['nu', 'NU'], ['pu', 'PU'], ['lc', 'Little Cup'],
+  ['monotype', 'Monotype'], ['doublesou', 'Doubles OU'], ['nationaldex', 'National Dex'], ['vgc', 'VGC (latest)']];
+
+function settingsSheet() {
+  const size = N ? +N.cacheSize() : 0;
+  openSheet(`<h2>Settings</h2>
+    <h3>Generation rules</h3>
+    <div class="gen-grid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => `<button type="button" class="gen-btn" data-gen="${g}" aria-pressed="${g === S.gen}"><b>Gen ${D.ROMAN[g]}</b><span>${D.GENS[g].region}</span></button>`).join('')}</div>
+    <p class="gen-games" id="genGames">${esc(D.GENS[S.gen].games)}</p>
+    <p class="note">Changes which Pokémon appear, their types, abilities, stats, Pokédex entries, learnsets, type matchups and Smogon sets.</p>
+    <h3>Voice</h3>
+    <div class="field"><label for="rate">Speed <span id="rateV">${S.rate.toFixed(2)}×</span></label><input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="${S.rate}"></div>
+    <div class="field"><label for="pitch">Pitch <span id="pitchV">${S.pitch.toFixed(2)}</span></label><input id="pitch" type="range" min="0.5" max="1.5" step="0.05" value="${S.pitch}"></div>
+    <button type="button" class="btn ghost" data-act="test-voice"><svg><use href="#i-speak"/></svg>Test voice</button>
+    <label class="toggle">Read the entry aloud after a scan, voice search or share<input type="checkbox" id="autoRead" ${S.autoRead ? 'checked' : ''}></label>
+    <h3>Smogon</h3>
+    <div class="field"><label for="fmtSel">Default format</label><select id="fmtSel">${FORMAT_CHOICES.map(([v, l]) => `<option value="${v}" ${v === S.format ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <h3>Saved data</h3>
+    <p class="note">Everything you open is saved on your phone so it works offline.${N ? ` Using ${(size / 1048576).toFixed(1)} MB.` : ''}</p>
+    <button type="button" class="btn ghost" data-act="clear-cache">Clear saved data</button>
+    <h3>About</h3>
+    <p class="note">Personal fan-made Pokédex${N ? ' v' + esc(N.version()) : ''}. Data from PokéAPI (pokeapi.co), Pokémon Showdown, and Smogon University sets via data.pkmn.cc. Pokémon and related names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This app isn’t affiliated with them.</p>`);
+}
+
+function lensSheet() {
+  openSheet(`<h2>Identify with Google Lens</h2>
+    <p>Lens recognises plushies, figures, toys and Pokémon on a screen, for free. Get the name from Lens, then send it here:</p>
+    <ol class="steps">
+      <li>Point Google Lens at the Pokémon, or use <b>Circle to Search</b> (long-press the home button or navigation bar) on a picture of it.</li>
+      <li>When Lens shows the name, <b>select the name text</b> and choose <b>Pokédex</b> in the menu that pops up.</li>
+      <li>Or tap <b>Share → Look up in Pokédex</b>. Screenshots work too: share them here and the app reads the name.</li>
+    </ol>
+    <p style="margin-top:16px"><button type="button" class="btn red" data-act="open-lens"><svg><use href="#i-lens"/></svg>Open Google Lens</button></p>`);
+}
+
+// ============================================================ EVENTS
+document.addEventListener('click', ev => {
+  const tr = ev.target.closest('tr.mrow');
+  if (tr) { toggleMove(tr); return; }
+  const t = ev.target.closest('button, [data-act]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.id) { go(d.id, false); return; }
+  if (d.go) { go(d.go, false); return; }
+  if (d.pick) { closeSheet(); go(d.pick, true); return; }
+  if (d.type !== undefined && t.closest('#typeFilter')) { typeFilter = d.type || null; renderTypeFilter(); renderList(true); return; }
+  if (d.tab) {
+    cur.tab = d.tab; renderPane();
+    const hero = $('.hero');
+    if (hero && window.scrollY > hero.offsetHeight) window.scrollTo(0, hero.offsetHeight);
+    return;
+  }
+  if (d.version) { cur.version = d.version; stopSpeaking(); renderPane(); return; }
+  if (d.fmt) { cur.fmt = d.fmt; renderPane(); return; }
+  if (d.ability) { showAbility(d.ability); return; }
+  if (d.url) { if (N) N.openUrl(d.url); else window.open(d.url, '_blank'); return; }
+  if (d.copyset !== undefined && cur && cur.sets) {
+    const entry = Object.entries(cur.sets)[+d.copyset];
+    if (entry) copyText(showdownExport(entry[1]));
+    t.lastChild.textContent = 'Copied';
+    return;
+  }
+  if (d.gen) {
+    S.gen = +d.gen; save();
+    $$('.gen-btn').forEach(b => b.setAttribute('aria-pressed', +b.dataset.gen === S.gen));
+    $('#genGames').textContent = D.GENS[S.gen].games;
+    if (cur) { cur.vg = null; cur.version = null; cur.fmt = null; }
+    renderHome();
+    if (!$('#detail').hidden && cur && cur.species) { $('#genPill2').textContent = genPillText(); renderDetail(); }
+    return;
+  }
+  switch (d.act) {
+    case 'back': if (history.length > 1) history.back(); else location.hash = ''; break;
+    case 'speak': speakEntry(); break;
+    case 'close-sheet': closeSheet(); break;
+    case 'voice': if (N) N.listen(); else alertSheet('Voice search works in the Android app.'); break;
+    case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
+    case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
+    case 'lens': lensSheet(); break;
+    case 'open-lens': if (N) N.openLens(); break;
+    case 'test-voice': speak('Pokédex online. Ready to identify Pokémon.'); break;
+    case 'clear-cache': if (N) { N.clearCache(); memo.clear(); N.toast('Saved data cleared'); closeSheet(); } break;
+    case 'retry-detail': if (cur) showDetail(cur.e.id); break;
+    case 'retry-pane': renderPane(); break;
+    case 'retry-index': boot().then(route).catch(() => {}); break;
+  }
+});
+$('#genPill').addEventListener('click', settingsSheet);
+$('#genPill2').addEventListener('click', settingsSheet);
+document.addEventListener('change', ev => {
+  const t = ev.target;
+  if (t.id === 'vgSel') { cur.vg = t.value; renderPane(); }
+  if (t.id === 'autoRead') { S.autoRead = t.checked; save(); }
+  if (t.id === 'fmtSel') { S.format = t.value; save(); if (cur) cur.fmt = null; }
+});
+document.addEventListener('input', ev => {
+  const t = ev.target;
+  if (t.id === 'q') { query = t.value; renderList(true); window.scrollTo(0, 0); }
+  if (t.id === 'rate') { S.rate = +t.value; $('#rateV').textContent = S.rate.toFixed(2) + '×'; save(); }
+  if (t.id === 'pitch') { S.pitch = +t.value; $('#pitchV').textContent = S.pitch.toFixed(2); save(); }
+});
+$('#q').addEventListener('keydown', ev => {
+  if (ev.key !== 'Enter') return;
+  const list = filtered();
+  if (list.length && (list.length === 1 || norm(list[0].name) === norm(query))) go(list[0].id, false);
+  ev.target.blur();
+});
+
+// ============================================================== BOOT
+let ready;
+function boot() {
+  $('#homeMsg').innerHTML = '<div class="msg"><b>Starting up…</b>Loading the Pokédex.</div>';
+  ready = loadIndex().then(() => { renderHome(); }).catch(err => {
+    $('#homeMsg').innerHTML = `<div class="msg"><b>${String(err.message) === 'offline' ? 'You’re offline' : 'Couldn’t load the Pokédex'}</b>
+      The first start needs the internet to download the list of Pokémon. After that it works offline.<br><br>
+      <button type="button" class="btn" data-act="retry-index">Try again</button></div>`;
+    throw err;
+  });
+  ready.catch(() => {});
+  return ready;
+}
+boot();
+$('#genPill').textContent = genPillText();
+window.onNative = ev => { ready.then(() => handleNative(ev)).catch(() => {}); };
+route();
+if (N) N.ready();
+}

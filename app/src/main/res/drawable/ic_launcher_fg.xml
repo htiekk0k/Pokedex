@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original icon: the device's big blue lens with three status lights. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- lens ring -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M47,54m-21,0a21,21 0,1 1,42 0a21,21 0,1 1,-42 0" />
+    <path android:fillColor="#1C2B3A"
+        android:pathData="M47,54m-17.5,0a17.5,17.5 0,1 1,35 0a17.5,17.5 0,1 1,-35 0" />
+    <!-- lens -->
+    <path android:fillColor="#2E9BE6"
+        android:pathData="M47,54m-15,0a15,15 0,1 1,30 0a15,15 0,1 1,-30 0" />
+    <path android:fillColor="#7CCBFF"
+        android:pathData="M47,54m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.85"
+        android:pathData="M41,47m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <!-- status lights -->
+    <path android:fillColor="#FF5A5F"
+        android:pathData="M74,36m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <path android:fillColor="#FFD23F"
+        android:pathData="M74,48m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <path android:fillColor="#4CD964"
+        android:pathData="M74,60m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+</vector>

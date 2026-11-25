@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+
+android {
+    namespace 'dev.personal.pokedex'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'dev.personal.pokedex'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    // A fixed key so every new build installs over the previous one
+    // (keeps your cache and settings). Personal use only.
+    signingConfigs {
+        shared {
+            storeFile file('pokedex.keystore')
+            storePassword 'pokedex'
+            keyAlias 'pokedex'
+            keyPassword 'pokedex'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+        debug {
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+}
