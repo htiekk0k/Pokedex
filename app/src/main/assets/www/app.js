@@ -508,45 +508,107 @@ const fmtVal = v => Array.isArray(v) ? v.map(fmtVal).join(' / ') : (v && typeof 
 const fmtSpread = v => Array.isArray(v) ? v.map(spread).join('  or  ') : spread(v);
 const first = v => Array.isArray(v) ? first(v[0]) : v;
 
-const FMT_ORDER = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe', 'monotype', 'doublesou', 'vgc', 'bss', 'nationaldex', '1v1', 'anythinggoes', 'ag'];
+// Smogon rules: 'gen1'…'gen9' or 'champions'. null = follow the app's generation (or your saved default).
+let smogonRules = null;
+const RULES = [...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => ['gen' + g, 'Gen ' + D.ROMAN[g]]), ['champions', 'Champions']];
+const RULES_DEX = {gen1:'rb', gen2:'gs', gen3:'rs', gen4:'dp', gen5:'bw', gen6:'xy', gen7:'sm', gen8:'ss', gen9:'sv', champions:'champions'};
+const FMT_ORDER = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe', 'monotype', 'doublesou', 'vgc', 'battlestadium', 'nationaldex', 'randombattle', 'randomdoublesbattle', '1v1', 'anythinggoes'];
 function fmtRank(f) {
-  const i = FMT_ORDER.findIndex(p => f === p || ((p === 'vgc' || p === 'bss' || p === 'nationaldex') && f.startsWith(p)));
+  const i = FMT_ORDER.findIndex(p => f === p || (['vgc', 'battlestadium', 'nationaldex'].includes(p) && f.startsWith(p)));
   return i < 0 ? 99 : i;
 }
-function pickFormat(formats) {
+const sortFormats = list => [...new Set(list)].sort((a, b) => fmtRank(a) - fmtRank(b) || a.localeCompare(b));
+const autoRules = e => 'gen' + Math.max(S.gen, Math.min(e.gen, 9));
+const defaultRules = e => S.smogonRules || autoRules(e);
+const rulesNow = e => smogonRules || defaultRules(e);
+// Every format Smogon has set data for, per rules (from data.pkmn.cc/sets/index.json).
+async function formatsFor(rules) {
+  let idx = {};
+  try { idx = await getJSON('https://data.pkmn.cc/sets/index.json', 7 * DAY); } catch (err) { /* offline: only formats in the file */ }
+  const out = [];
+  for (const k of Object.keys(idx)) {
+    const id = k.replace(/\.json$/, '');
+    if (id.startsWith(rules) && id !== rules) out.push(id.slice(rules.length));
+  }
+  return out;
+}
+const hasRandbats = rules => /^gen[1-9]$/.test(rules);
+function pickFormat(withSets, all) {
   const want = cur.fmt || S.format;
-  if (formats.includes(want)) return want;
-  if (want === 'vgc') { const v = formats.filter(f => f.startsWith('vgc')).sort().pop(); if (v) return v; }
-  if (formats.includes('ou')) return 'ou';
-  return formats[0];
+  const pool = cur.fmt ? all : withSets.length ? withSets : all;
+  if (pool.includes(want)) return want;
+  for (const fam of ['vgc', 'battlestadium']) if (want && want.startsWith(fam)) { const v = pool.filter(f => f.startsWith(fam)).sort().pop(); if (v) return v; }
+  if (withSets.includes('ou')) return 'ou';
+  return withSets[0] || all[0];
 }
 const smogonSlug = name => name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.'’:%]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 async function paneSmogon(pane) {
   pane.innerHTML = '<div class="skeleton"></div>';
-  const my = token, e = cur.e, gen = S.gen;
-  let data;
-  try { data = await getJSON(`https://data.pkmn.cc/sets/gen${gen}.json`, 3 * DAY); }
-  catch (err) { if (my === token && cur.tab === 'smogon') pane.innerHTML = errorCard(err, 'retry-pane'); return; }
+  const my = token, e = cur.e;
+  const rules = rulesNow(e);
+  const rulesLabel = rules === 'champions' ? 'Pokémon Champions' : D.GENS[+rules.slice(3)].games;
+  const ruleChips = `<div class="games scroll">${RULES.slice().reverse().filter(([r]) => r === 'champions' || +r.slice(3) >= e.gen).map(([r, l]) => `<button type="button" class="chip" data-srules="${r}" aria-pressed="${r === rules}">${l}</button>`).join('')}</div>`;
+  const dexLink = `https://www.smogon.com/dex/${RULES_DEX[rules]}/pokemon/${smogonSlug(e.name)}/`;
+  const linkBtn = `<button type="button" class="btn ghost" data-url="${dexLink}"><svg><use href="#i-ext"/></svg>Open on Smogon</button>`;
+
+  let data = {}, loadErr = null;
+  try { data = await getJSON(`https://data.pkmn.cc/sets/${rules}.json`, 3 * DAY); } catch (err) { loadErr = err; }
+  const indexFormats = await formatsFor(rules);
   if (my !== token || cur.tab !== 'smogon') return;
-  // gen<N>.json is species → tier → set name → set. (Older/other files may be tier → species.)
+
+  // <rules>.json is species → format → set name → set (older files may be format → species).
   let byFmt = {};
   if (data[e.name] && typeof data[e.name] === 'object') byFmt = data[e.name];
   else for (const t of Object.keys(data)) if (data[t] && typeof data[t] === 'object' && data[t][e.name]) byFmt[t] = data[t][e.name];
-  const formats = Object.keys(byFmt).filter(f => byFmt[f] && Object.keys(byFmt[f]).length).sort((a, b) => fmtRank(a) - fmtRank(b) || a.localeCompare(b));
-  const dexLink = `https://www.smogon.com/dex/${D.GENS[gen].smogon}/pokemon/${smogonSlug(e.name)}/`;
-  const linkBtn = `<button type="button" class="btn ghost" data-url="${dexLink}"><svg><use href="#i-ext"/></svg>Open on Smogon</button>`;
-  if (!formats.length) {
-    pane.innerHTML = `<div class="msg"><b>No Smogon sets</b>Smogon has no Gen ${D.ROMAN[gen]} sets for ${esc(displayName(e))}.<br><br>${linkBtn}</div>`;
+  const withSets = sortFormats(Object.keys(byFmt).filter(f => byFmt[f] && Object.keys(byFmt[f]).length));
+  const all = sortFormats([...withSets, ...indexFormats, ...(hasRandbats(rules) ? ['randombattle'] : []), ...(['gen8', 'gen9'].includes(rules) ? ['randomdoublesbattle'] : [])]);
+
+  if (loadErr && !all.length) {
+    pane.innerHTML = `<section class="card"><h3>Rules</h3>${ruleChips}</section>` + errorCard(loadErr, 'retry-pane');
     return;
   }
-  const fmt = cur.fmt = pickFormat(formats);
-  const sets = cur.sets = byFmt[fmt];
-  pane.innerHTML = `<section class="card"><h3>Format <small>Gen ${D.ROMAN[gen]}</small></h3>
-      <div class="games scroll">${formats.map(f => `<button type="button" class="chip" data-fmt="${f}" aria-pressed="${f === fmt}">${esc(D.tierLabel(f))}</button>`).join('')}</div>
-      <p class="note">Sets written by Smogon University contributors (via data.pkmn.cc).</p></section>
-    ${Object.entries(sets).map(([setName, s], i) => setCard(setName, s, i)).join('')}
-    <div style="text-align:center">${linkBtn}</div>`;
+  const fmt = cur.fmt = pickFormat(withSets, all);
+  const isDefault = S.format === fmt && rules === defaultRules(e);
+  cur.rules = rules;
+  const opt = f => `<option value="${f}" ${f === fmt ? 'selected' : ''}>${esc(D.tierLabel(f))}</option>`;
+  const others = all.filter(f => !withSets.includes(f));
+  const head = `<section class="card"><h3>Rules <small>${esc(rulesLabel)}</small></h3>${ruleChips}
+      <div class="field"><label for="fmtPick">Battle format</label>
+      <select id="fmtPick">${withSets.length ? `<optgroup label="Sets for ${esc(e.name)}">${withSets.map(opt).join('')}</optgroup>` : ''}
+        ${others.length ? `<optgroup label="Other formats">${others.map(opt).join('')}</optgroup>` : ''}</select></div>
+      <div class="set-actions"><button type="button" class="btn ${isDefault ? 'ghost' : 'red'}" data-act="fmt-default" ${isDefault ? 'disabled' : ''}>${isDefault ? '★ This is your default' : '☆ Make this my default'}</button></div>
+      <p class="note">Sets written by Smogon University contributors (via data.pkmn.cc).</p></section>`;
+
+  if (fmt === 'randombattle' || fmt === 'randomdoublesbattle') {
+    pane.innerHTML = head + '<div class="skeleton"></div>';
+    let rb = null;
+    try { rb = await getJSON(`https://data.pkmn.cc/randbats/${rules}${fmt}.json`, 3 * DAY); } catch (err) { /* below */ }
+    if (my !== token || cur.tab !== 'smogon') return;
+    const r = rb && rb[e.name];
+    cur.sets = null;
+    pane.innerHTML = head + (r ? randbatsCard(r) : `<div class="msg"><b>Not in ${esc(D.tierLabel(fmt))}</b>${esc(e.name)} has no ${esc(D.tierLabel(fmt))} set for these rules.</div>`) + `<div style="text-align:center">${linkBtn}</div>`;
+    return;
+  }
+  const sets = byFmt[fmt];
+  cur.sets = sets || null;
+  pane.innerHTML = head + (sets
+    ? Object.entries(sets).map(([setName, s], i) => setCard(setName, s, i)).join('')
+    : `<div class="msg"><b>No ${esc(D.tierLabel(fmt))} sets</b>Smogon hasn’t written ${esc(D.tierLabel(fmt))} sets for ${esc(displayName(e))} under these rules.${withSets.length ? ` It has sets in: ${withSets.map(f => esc(D.tierLabel(f))).join(', ')}.` : ''}</div>`) +
+    `<div style="text-align:center">${linkBtn}</div>`;
+}
+// Random Battle data: {level, abilities, items, moves, teraTypes} or {level, roles: {name: {...}}}
+function randbatsCard(r) {
+  const list = v => Array.isArray(v) ? v.join(' / ') : (v ?? '');
+  const block = (name, x) => `<section class="card setcard"><h4>${esc(name)}</h4><div class="set-lines">
+      ${r.level ? `<div><b>Level</b>${esc(r.level)}</div>` : ''}
+      ${x.abilities ? `<div><b>Ability</b>${esc(list(x.abilities))}</div>` : ''}
+      ${x.items ? `<div><b>Item</b>${esc(list(x.items))}</div>` : ''}
+      ${x.teraTypes ? `<div><b>Tera</b>${esc(list(x.teraTypes))}</div>` : ''}
+    </div><h4 style="margin-top:10px;font-size:14px">Possible moves</h4>
+    <div class="games" style="flex-wrap:wrap;margin:0">${(x.moves || []).map(m => `<span class="chip" style="min-height:30px;display:inline-flex;align-items:center">${esc(m)}</span>`).join('')}</div></section>`;
+  if (r.roles) return Object.entries(r.roles).map(([n, x]) => block(n, x)).join('');
+  return block('Random set', r);
 }
 function setCard(setName, s, i) {
   const line = (k, v) => v === undefined || v === null || v === '' ? '' : `<div><b>${k}</b>${esc(v)}</div>`;
@@ -764,7 +826,20 @@ function handleNative(ev) {
       handleFound(findInText(res.map((t, i) => ({t, w: 1 / (i + 1)})), true), res.join('\n'));
       break;
     }
-    case 'text': handleFound(findInText(textToLines(ev.text || ''), false), ev.text || ''); break;
+    case 'lensBack': hideBusy(); lensBackSheet(); break;
+    case 'text': {
+      const found = findInText(textToLines(ev.text || ''), false);
+      if (!found.length && ev.source === 'lens') {
+        hideBusy();
+        openSheet(`<h2>That isn’t a Pokémon name</h2><p>You copied:</p><div class="ocr-text">${esc(String(ev.text).slice(0, 300))}</div>
+          <p>Go back to Lens, copy just the Pokémon’s name, then return.</p>
+          <div class="pick-list"><button type="button" class="btn red" data-act="lens-check">Check again</button>
+          <button type="button" class="btn ghost" data-act="lens-stop">Cancel</button></div>`);
+        break;
+      }
+      handleFound(found, ev.text || '');
+      break;
+    }
   }
 }
 
@@ -775,8 +850,10 @@ function showBusy(label) { $('#busyLabel').textContent = label; $('#busy').hidde
 function hideBusy() { $('#busy').hidden = true; }
 function alertSheet(msg) { openSheet(`<h2>Pokédex</h2><p>${esc(msg)}</p>`); }
 
-const FORMAT_CHOICES = [['ou', 'OU'], ['ubers', 'Ubers'], ['uu', 'UU'], ['ru', 'RU'], ['nu', 'NU'], ['pu', 'PU'], ['lc', 'Little Cup'],
-  ['monotype', 'Monotype'], ['doublesou', 'Doubles OU'], ['nationaldex', 'National Dex'], ['vgc', 'VGC (latest)']];
+const FORMAT_CHOICES = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe', 'monotype', '1v1', '2v2doubles', 'almostanyability',
+  'anythinggoes', 'balancedhackmons', 'battlestadiumsingles', 'cap', 'doublesou', 'godlygift', 'inheritance', 'mixandmega',
+  'nationaldex', 'nationaldexdoubles', 'nationaldexmonotype', 'nationaldexru', 'nationaldexuu', 'nationaldexubers',
+  'partnersincrime', 'randombattle', 'randomdoublesbattle', 'stabmons', 'ubersuu', 'vgc'];
 
 function settingsSheet() {
   const size = N ? +N.cacheSize() : 0;
@@ -784,14 +861,16 @@ function settingsSheet() {
     <h3>Generation rules</h3>
     <div class="gen-grid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => `<button type="button" class="gen-btn" data-gen="${g}" aria-pressed="${g === S.gen}"><b>Gen ${D.ROMAN[g]}</b><span>${D.GENS[g].region}</span></button>`).join('')}</div>
     <p class="gen-games" id="genGames">${esc(D.GENS[S.gen].games)}</p>
-    <p class="note">Changes which Pokémon appear, their types, abilities, stats, Pokédex entries, learnsets, type matchups and Smogon sets.</p>
+    <p class="note">Changes which Pokémon appear, their types, abilities, stats, Pokédex entries, learnsets and type matchups. The Smogon tab has its own generation picker.</p>
     <h3>Voice</h3>
     <div class="field"><label for="rate">Speed <span id="rateV">${S.rate.toFixed(2)}×</span></label><input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="${S.rate}"></div>
     <div class="field"><label for="pitch">Pitch <span id="pitchV">${S.pitch.toFixed(2)}</span></label><input id="pitch" type="range" min="0.5" max="1.5" step="0.05" value="${S.pitch}"></div>
     <button type="button" class="btn ghost" data-act="test-voice"><svg><use href="#i-speak"/></svg>Test voice</button>
     <label class="toggle">Read the entry aloud after a scan, voice search or share<input type="checkbox" id="autoRead" ${S.autoRead ? 'checked' : ''}></label>
     <h3>Smogon</h3>
-    <div class="field"><label for="fmtSel">Default format</label><select id="fmtSel">${FORMAT_CHOICES.map(([v, l]) => `<option value="${v}" ${v === S.format ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label for="rulesSel">Default rules</label><select id="rulesSel"><option value="">Follow the app’s generation</option>${RULES.map(([r, l]) => `<option value="${r}" ${r === S.smogonRules ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label for="fmtSel">Default battle format</label><select id="fmtSel">${[...new Set([...FORMAT_CHOICES, S.format])].map(v => `<option value="${v}" ${v === S.format ? 'selected' : ''}>${esc(v === 'vgc' ? 'VGC (latest)' : D.tierLabel(v))}</option>`).join('')}</select></div>
+    <p class="note">Tip: on any Smogon tab, pick a format and tap “Make this my default”.</p>
     <h3>Saved data</h3>
     <p class="note">Everything you open is saved on your phone so it works offline.${N ? ` Using ${(size / 1048576).toFixed(1)} MB.` : ''}</p>
     <button type="button" class="btn ghost" data-act="clear-cache">Clear saved data</button>
@@ -801,13 +880,25 @@ function settingsSheet() {
 
 function lensSheet() {
   openSheet(`<h2>Identify with Google Lens</h2>
-    <p>Lens recognises plushies, figures, toys and Pokémon on a screen, for free. Get the name from Lens, then send it here:</p>
+    <p>Lens recognises plushies, figures, toys and Pokémon on a screen. Take a photo and it opens in Google Lens.</p>
+    <div class="pick-list">
+      <button type="button" class="btn red" data-act="lens-camera"><svg><use href="#i-cam"/></svg>Take photo → Lens</button>
+      <button type="button" class="btn ghost" data-act="lens-gallery"><svg><use href="#i-img"/></svg>Use a picture → Lens</button>
+    </div>
+    <h3>Then, to come back</h3>
     <ol class="steps">
-      <li>Point Google Lens at the Pokémon, or use <b>Circle to Search</b> (long-press the home button or navigation bar) on a picture of it.</li>
-      <li>When Lens shows the name, <b>select the name text</b> and choose <b>Pokédex</b> in the menu that pops up.</li>
-      <li>Or tap <b>Share → Look up in Pokédex</b>. Screenshots work too: share them here and the app reads the name.</li>
-    </ol>
-    <p style="margin-top:16px"><button type="button" class="btn red" data-act="open-lens"><svg><use href="#i-lens"/></svg>Open Google Lens</button></p>`);
+      <li>When Lens shows the Pokémon’s name, long-press it and tap <b>Copy</b>, then press <b>back</b>. The Pokédex opens it automatically.</li>
+      <li>Or select the name and choose <b>Pokédex</b> in the menu that pops up.</li>
+    </ol>`);
+}
+function lensBackSheet() {
+  openSheet(`<h2>Waiting for a name from Lens</h2>
+    <p>Nothing new was copied yet. In Google Lens, long-press the Pokémon’s name, tap <b>Copy</b>, then come back here.</p>
+    <div class="pick-list">
+      <button type="button" class="btn red" data-act="lens-check">I copied it. Check again</button>
+      <button type="button" class="btn ghost" data-act="lens-camera"><svg><use href="#i-cam"/></svg>Try another photo</button>
+      <button type="button" class="btn ghost" data-act="lens-stop">Cancel</button>
+    </div>`);
 }
 
 // ============================================================ EVENTS
@@ -829,6 +920,7 @@ document.addEventListener('click', ev => {
   }
   if (d.version) { cur.version = d.version; stopSpeaking(); renderPane(); return; }
   if (d.fmt) { cur.fmt = d.fmt; renderPane(); return; }
+  if (d.srules) { smogonRules = d.srules; cur.fmt = null; renderPane(); return; }
   if (d.ability) { showAbility(d.ability); return; }
   if (d.url) { if (N) N.openUrl(d.url); else window.open(d.url, '_blank'); return; }
   if (d.copyset !== undefined && cur && cur.sets) {
@@ -838,7 +930,7 @@ document.addEventListener('click', ev => {
     return;
   }
   if (d.gen) {
-    S.gen = +d.gen; save();
+    S.gen = +d.gen; save(); smogonRules = null;
     $$('.gen-btn').forEach(b => b.setAttribute('aria-pressed', +b.dataset.gen === S.gen));
     $('#genGames').textContent = D.GENS[S.gen].games;
     if (cur) { cur.vg = null; cur.version = null; cur.fmt = null; }
@@ -854,7 +946,18 @@ document.addEventListener('click', ev => {
     case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
     case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
     case 'lens': lensSheet(); break;
-    case 'open-lens': if (N) N.openLens(); break;
+    case 'fmt-default':
+      if (cur && cur.fmt) {
+        S.format = cur.fmt;
+        S.smogonRules = (!S.smogonRules && cur.rules === autoRules(cur.e)) ? null : cur.rules;
+        smogonRules = null;
+        save(); if (N) N.toast('Default: ' + D.tierLabel(cur.fmt) + (S.smogonRules ? ' · ' + RULES.find(r => r[0] === S.smogonRules)[1] : '')); renderPane();
+      }
+      break;
+    case 'lens-camera': closeSheet(); if (N) N.scan('lens-camera'); else alertSheet('Lens works in the Android app.'); break;
+    case 'lens-gallery': closeSheet(); if (N) N.scan('lens-gallery'); else alertSheet('Lens works in the Android app.'); break;
+    case 'lens-check': closeSheet(); if (N) N.checkClipboard(); break;
+    case 'lens-stop': closeSheet(); if (N) N.stopLensWatch(); break;
     case 'test-voice': speak('Pokédex online. Ready to identify Pokémon.'); break;
     case 'clear-cache': if (N) { N.clearCache(); memo.clear(); N.toast('Saved data cleared'); closeSheet(); } break;
     case 'retry-detail': if (cur) showDetail(cur.e.id); break;
@@ -869,6 +972,8 @@ document.addEventListener('change', ev => {
   if (t.id === 'vgSel') { cur.vg = t.value; renderPane(); }
   if (t.id === 'autoRead') { S.autoRead = t.checked; save(); }
   if (t.id === 'fmtSel') { S.format = t.value; save(); if (cur) cur.fmt = null; }
+  if (t.id === 'rulesSel') { S.smogonRules = t.value || null; save(); smogonRules = null; if (cur) cur.fmt = null; }
+  if (t.id === 'fmtPick') { cur.fmt = t.value; renderPane(); }
 });
 document.addEventListener('input', ev => {
   const t = ev.target;

@@ -138,14 +138,21 @@ window.DEXDATA = (() => {
   const STAT_LABEL = {hp:'HP', attack:'Attack', defense:'Defense', 'special-attack':'Sp. Atk', 'special-defense':'Sp. Def', speed:'Speed'};
 
   const TIER_LABEL = {
-    ou:'OU', ubers:'Ubers', uu:'UU', ru:'RU', nu:'NU', pu:'PU', zu:'ZU', lc:'Little Cup', nfe:'NFE',
-    uber:'Ubers', ag:'Anything Goes', anythinggoes:'Anything Goes', monotype:'Monotype', '1v1':'1v1',
-    doublesou:'Doubles OU', doublesuu:'Doubles UU', doublesubers:'Doubles Ubers', nationaldex:'National Dex',
-    nationaldexubers:'National Dex Ubers', nationaldexuu:'National Dex UU', nationaldexmonotype:'National Dex Monotype',
-    nationaldexdoubles:'National Dex Doubles', almostanyability:'Almost Any Ability', balancedhackmons:'Balanced Hackmons',
-    stabmons:'STABmons', camomons:'Camomons', godlygift:'Godly Gift', purehackmons:'Pure Hackmons', cap:'CAP',
-    lcuu:'LC UU', '2v2doubles':'2v2 Doubles', battlestadiumsingles:'Battle Stadium Singles', tradebacksou:'Tradebacks OU',
-    stadiumou:'Stadium OU'
+    ou:'OU (OverUsed)', ubers:'Ubers', uber:'Ubers', uu:'UU (UnderUsed)', ru:'RU (RarelyUsed)', nu:'NU (NeverUsed)', pu:'PU',
+    zu:'ZU (ZeroUsed)', lc:'LC (Little Cup)', nfe:'NFE', uubl:'UUBL', rubl:'RUBL', nubl:'NUBL', publ:'PUBL', zubl:'ZUBL',
+    monotype:'Monotype', '1v1':'1v1', '2v2doubles':'2v2 Doubles', almostanyability:'Almost Any Ability',
+    anythinggoes:'AG (Anything Goes)', ag:'AG (Anything Goes)', balancedhackmons:'BH (Balanced Hackmons)',
+    battlestadiumsingles:'Battle Stadium Singles', battlestadiumdoubles:'Battle Stadium Doubles', cc1v1:'CC1v1 (Challenge Cup 1v1)',
+    cap:'CAP (Create-A-Pokémon)', doublesou:'Doubles OU', doublesubers:'Doubles Ubers', doublesuu:'Doubles UU', draft:'Draft',
+    godlygift:'Godly Gift', inheritance:'Inheritance', mixandmega:'Mix and Mega', nationaldex:'National Dex',
+    nationaldexdoubles:'National Dex Doubles', nationaldexmonotype:'National Dex Monotype', nationaldexru:'National Dex RU',
+    nationaldexuu:'National Dex UU', nationaldexubers:'National Dex Ubers', dlc1nationaldexag:'National Dex AG (DLC1)',
+    partnersincrime:'Partners in Crime', randombattle:'Random Battle', randomdoublesbattle:'Random Doubles',
+    stabmons:'STABmons', ubersuu:'Ubers UU', camomons:'Camomons', purehackmons:'Pure Hackmons', middlecup:'Middle Cup',
+    petitcup:'Petit Cup', pikacup:'Pika Cup', nc1997:'Nintendo Cup 1997', nc1999:'Nintendo Cup 1999', stadiumou:'Stadium OU',
+    tradebacksou:'Tradebacks OU', lclevel100:'LC Level 100', dreamworldou:'Dream World OU', letsgoou:"Let's Go OU",
+    bdspou:'BDSP OU', battlespotsingles:'Battle Spot Singles', battlespotdoubles:'Battle Spot Doubles',
+    battlespottriples:'Battle Spot Triples'
   };
   function tierLabel(id) {
     if (TIER_LABEL[id]) return TIER_LABEL[id];

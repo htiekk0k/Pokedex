@@ -54,6 +54,15 @@ public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 11;
     private static final int REQ_GALLERY = 12;
     private static final int REQ_VOICE = 13;
+    private static final int REQ_LENS_CAMERA = 14;
+    private static final int REQ_LENS_GALLERY = 15;
+
+    private static final String GOOGLE_APP = "com.google.android.googlequicksearchbox";
+    private static final String LENS_APP = "com.google.ar.lens";
+
+    /** When we handed a picture to Google Lens; on return we look at the clipboard. */
+    private long lensSentAt = 0;
+    private String clipBeforeLens = null;
 
     private WebView web;
     private NetCache net;
@@ -116,6 +125,78 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Back from Google Lens: pick up a copied Pokémon name. (Android only lets an
+        // app read the clipboard while it is in focus, which is now.)
+        if (hasFocus && lensSentAt > 0) {
+            if (System.currentTimeMillis() - lensSentAt > 15 * 60 * 1000L) { lensSentAt = 0; return; }
+            String clip = readClipboard();
+            if (clip != null && !clip.trim().isEmpty() && !clip.equals(clipBeforeLens)) {
+                lensSentAt = 0;
+                emit(evt("text").put2("source", "lens").put2("text", clip));
+            } else {
+                emit(evt("lensBack"));
+            }
+        }
+    }
+
+    private String readClipboard() {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm == null || !cm.hasPrimaryClip()) return null;
+            ClipData c = cm.getPrimaryClip();
+            if (c == null || c.getItemCount() == 0) return null;
+            CharSequence t = c.getItemAt(0).coerceToText(this);
+            return t == null ? null : t.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Copies the picture into our own files so Google Lens is allowed to open it, then sends it there. */
+    private void sendToLens(Uri source) {
+        File dir = new File(getCacheDir(), "photos");
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        File f = new File(dir, "lens.jpg");
+        Uri uri;
+        try {
+            try (InputStream in = getContentResolver().openInputStream(source);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                if (in == null) throw new IOException("no stream");
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+            uri = FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+        } catch (IOException e) {
+            emit(evt("error").put2("message", "Couldn't open that picture."));
+            return;
+        }
+        clipBeforeLens = readClipboard();
+        String[] targets = {GOOGLE_APP, LENS_APP};
+        for (String pkg : targets) {
+            Intent i = new Intent(Intent.ACTION_SEND);
+            i.setType("image/jpeg");
+            i.putExtra(Intent.EXTRA_STREAM, uri);
+            i.setClipData(ClipData.newRawUri("photo", uri));
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            i.setPackage(pkg);
+            try {
+                grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(i);
+                lensSentAt = System.currentTimeMillis();
+                emit(evt("cancel"));
+                return;
+            } catch (ActivityNotFoundException | SecurityException ignored) { }
+        }
+        emit(evt("error").put2("message", "Google Lens isn't available. Install or update the Google app."));
+    }
+
+    private File photoFile() { return new File(new File(getCacheDir(), "photos"), "scan.jpg"); }
+
+    @Override
     public void onBackPressed() {
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
@@ -142,10 +223,12 @@ public class MainActivity extends Activity {
                 String subject = i.getStringExtra(Intent.EXTRA_SUBJECT);
                 CharSequence text = i.getCharSequenceExtra(Intent.EXTRA_TEXT);
                 String all = (subject == null ? "" : subject + "\n") + (text == null ? "" : text);
+                lensSentAt = 0;
                 emit(evt("text").put2("source", "share").put2("text", all));
             }
             i.setAction(null);
         } else if (Intent.ACTION_PROCESS_TEXT.equals(action)) {
+            lensSentAt = 0;
             CharSequence text = i.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
             if (text != null) emit(evt("text").put2("source", "select").put2("text", text.toString()));
             i.setAction(null);
@@ -159,7 +242,11 @@ public class MainActivity extends Activity {
             emit(evt("cancel"));
             return;
         }
-        if (req == REQ_CAMERA && photoUri != null) {
+        if (req == REQ_LENS_CAMERA && photoUri != null) {
+            sendToLens(photoUri);
+        } else if (req == REQ_LENS_GALLERY && data != null && data.getData() != null) {
+            sendToLens(data.getData());
+        } else if (req == REQ_CAMERA && photoUri != null) {
             runOcr(photoUri, "camera");
         } else if (req == REQ_GALLERY && data != null && data.getData() != null) {
             runOcr(data.getData(), "gallery");
@@ -267,32 +354,51 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** source: camera | gallery (read the name on it) or lens-camera | lens-gallery (send to Google Lens). */
         @JavascriptInterface
         public void scan(String source) {
+            final boolean lens = source != null && source.startsWith("lens");
+            final boolean gallery = source != null && source.endsWith("gallery");
             runOnUiThread(() -> {
                 try {
-                    if ("gallery".equals(source)) {
+                    if (gallery) {
                         Intent i = new Intent(Intent.ACTION_GET_CONTENT);
                         i.setType("image/*");
                         i.addCategory(Intent.CATEGORY_OPENABLE);
-                        startActivityForResult(Intent.createChooser(i, "Pick a picture"), REQ_GALLERY);
+                        startActivityForResult(Intent.createChooser(i, "Pick a picture"), lens ? REQ_LENS_GALLERY : REQ_GALLERY);
                     } else {
-                        File dir = new File(getCacheDir(), "photos");
+                        File f = photoFile();
                         //noinspection ResultOfMethodCallIgnored
-                        dir.mkdirs();
-                        File f = new File(dir, "scan.jpg");
+                        f.getParentFile().mkdirs();
                         photoUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".files", f);
                         Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                         i.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
                         i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         i.setClipData(ClipData.newRawUri("photo", photoUri));
-                        startActivityForResult(i, REQ_CAMERA);
+                        startActivityForResult(i, lens ? REQ_LENS_CAMERA : REQ_CAMERA);
                     }
                 } catch (ActivityNotFoundException e) {
                     toast("No camera or gallery app found.");
                 }
             });
         }
+
+        /** "Check again" after coming back from Lens. */
+        @JavascriptInterface
+        public void checkClipboard() {
+            runOnUiThread(() -> {
+                String clip = readClipboard();
+                if (clip != null && !clip.trim().isEmpty()) {
+                    lensSentAt = 0;
+                    emit(evt("text").put2("source", "lens").put2("text", clip));
+                } else {
+                    emit(evt("lensBack"));
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void stopLensWatch() { lensSentAt = 0; }
 
         @JavascriptInterface
         public void openUrl(String url) {
