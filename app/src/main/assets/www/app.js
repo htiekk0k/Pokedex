@@ -984,7 +984,7 @@ function settingsSheet() {
     <button type="button" class="btn ghost" data-act="test-voice"><svg><use href="#i-speak"/></svg>Test voice</button>
     <label class="toggle">Read the entry aloud after a scan, voice search or share<input type="checkbox" id="autoRead" ${S.autoRead ? 'checked' : ''}></label>
     <h3>Smogon</h3>
-    <div class="field"><label for="rulesSel">Default rules</label><select id="rulesSel"><option value="">Follow the app’s generation</option>${RULES.map(([r, l]) => `<option value="${r}" ${r === S.smogonRules ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label for="rulesSel">Default rules</label><select id="rulesSel"><option value="">Latest generation (Gen IX)</option>${RULES.map(([r, l]) => `<option value="${r}" ${r === S.smogonRules ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="fmtSel">Default battle format</label><select id="fmtSel">${[...new Set([...FORMAT_CHOICES, S.format])].map(v => `<option value="${v}" ${v === S.format ? 'selected' : ''}>${esc(v === 'vgc' ? 'VGC (latest)' : D.tierLabel(v))}</option>`).join('')}</select></div>
     <p class="note">Tip: on any Smogon tab, pick a format and tap “Make this my default”.</p>
     <h3>Saved data</h3>

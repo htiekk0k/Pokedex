@@ -23,12 +23,17 @@ On your phone open this repository → **Releases** → latest build → tap **P
 
 Everything you open is cached on the phone and works offline afterwards.
 
+## Documentation
+
+See [`docs/`](docs/README.md): Software Requirements Specification, use case, activity, sequence, state and component diagrams.
+
 ## Project layout
 
 - `app/src/main/java/.../MainActivity.java`: Android shell (WebView, text-to-speech, voice, camera + OCR, share intents)
 - `app/src/main/java/.../NetCache.java`: download + offline cache
 - `app/src/main/assets/www/`: the app's screens (HTML/CSS/JS)
 - `.github/workflows/build.yml`: builds and releases the APK
+- `docs/`: SRS and UML diagrams
 
 The signing key in `app/pokedex.keystore` is only for this personal app, so updates install over each other.
 
