@@ -4,7 +4,8 @@ Actors
 - **User**: the person using the app (primary).
 - **Google Lens**: identifies a Pokémon from a photo (secondary, external app).
 - **Data sources**: PokéAPI, Pokémon Showdown data and data.pkmn.cc (secondary, external services).
-- **Android services**: text-to-speech, speech recognition, camera and gallery (secondary).
+- **Android services**: text-to-speech, speech recognition, camera and gallery, package installer (secondary).
+- **GitHub Releases**: hosts each new APK build (secondary).
 
 Mermaid has no native UML use-case notation, so use cases are drawn as rounded nodes inside the system boundary; dashed arrows are «include» / «extend» relationships.
 
@@ -28,11 +29,12 @@ flowchart LR
     UC09(["UC-09 View Smogon sets"])
     UC10(["UC-10 Set default rules & format"])
     UC11(["UC-11 Manage settings & saved data"])
+    UC12(["UC-12 Update the app"])
     MATCH(["Match Pokémon name"])
     FETCH(["Fetch & cache data"])
   end
 
-  user --- UC01 & UC02 & UC03 & UC04 & UC05 & UC06 & UC07 & UC08 & UC09 & UC10 & UC11
+  user --- UC01 & UC02 & UC03 & UC04 & UC05 & UC06 & UC07 & UC08 & UC09 & UC10 & UC11 & UC12
 
   UC02 -. "«extend»" .-> UC01
   UC03 -. "«include»" .-> MATCH
@@ -51,6 +53,9 @@ flowchart LR
   UC03 --- android
   UC07 --- android
   UC04 --- android
+  UC12 -. "«extend»" .-> UC11
+  UC12 --- github(["🐙 GitHub Releases"])
+  UC12 --- android
 ```
 
 ---
@@ -140,3 +145,11 @@ flowchart LR
 |---|---|
 | Main flow | 1. User taps the cog. 2. Adjusts voice speed/pitch, auto-read, Smogon defaults. 3. Optionally clears saved data. |
 | Requirements | FR-9.3, FR-14, FR-15 |
+
+### UC-12 Update the app
+| | |
+|---|---|
+| Actors | User; GitHub Releases; Android package installer |
+| Main flow | 1. User taps the cog → *Check for updates* (or the *Update available* banner). 2. App reads the latest release and compares build numbers. 3. App shows the new build, size and "What's new". 4. User taps *Download and install*. 5. App downloads with a progress bar. 6. Android's installer asks to confirm; user taps *Update*. 7. The new version opens with settings and data kept. |
+| Alternatives | 2a. Offline / GitHub error → "Couldn't check" with *Try again*. 3a. Already latest → "You're up to date". 5a. Download fails → "Update failed" with *Try again*. 6a. Installing from Pokédex not yet allowed → one-time permission screen; on return the install continues. |
+| Requirements | FR-16.1–16.8 |

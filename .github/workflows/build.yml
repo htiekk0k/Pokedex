@@ -36,6 +36,10 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Pokédex build ${{ github.run_number }}
-          body: Download **Pokedex.apk** below and open it on your Android phone to install or update.
+          # Shown as "What's new" by the in-app updater
+          body: |
+            ${{ github.event.head_commit.message }}
+
+            Download **Pokedex.apk** below and open it on your Android phone to install or update.
           files: Pokedex.apk
           make_latest: true

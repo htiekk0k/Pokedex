@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
@@ -37,6 +38,9 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -63,6 +67,10 @@ public class MainActivity extends Activity {
     /** When we handed a picture to Google Lens; on return we look at the clipboard. */
     private long lensSentAt = 0;
     private String clipBeforeLens = null;
+
+    /** GitHub repository whose Releases hold the APK (in-app updates). */
+    private static final String UPDATE_REPO = "htiekk0k/Pokedex";
+    private boolean pendingInstall = false;
 
     private WebView web;
     private NetCache net;
@@ -122,6 +130,164 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Back from "Allow from this source": continue the update install.
+        if (pendingInstall && canInstall()) {
+            pendingInstall = false;
+            installUpdateNow();
+        }
+    }
+
+    // ---------------------------------------------------------- updates
+
+    private long installedCode() {
+        try {
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private boolean canInstall() {
+        return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[16384];
+        int n;
+        while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+        return bos.toByteArray();
+    }
+
+    private File updateFile() { return new File(new File(getCacheDir(), "updates"), "Pokedex.apk"); }
+
+    /** Asks GitHub for the latest release and reports it to the UI. */
+    private void checkUpdate(boolean quiet) {
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL("https://api.github.com/repos/" + UPDATE_REPO + "/releases/latest").openConnection();
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(20000);
+                c.setRequestProperty("Accept", "application/vnd.github+json");
+                c.setRequestProperty("User-Agent", "PersonalPokedexApp");
+                int code = c.getResponseCode();
+                if (code != 200) throw new IOException("HTTP " + code);
+                String body;
+                try (InputStream in = c.getInputStream()) { body = new String(readAll(in), StandardCharsets.UTF_8); }
+                JSONObject r = new JSONObject(body);
+                String tag = r.optString("tag_name");
+                long latest = 0;
+                String digits = tag.replaceAll("[^0-9]", "");
+                if (!digits.isEmpty()) latest = Long.parseLong(digits);
+                String apk = null;
+                long size = 0;
+                JSONArray assets = r.optJSONArray("assets");
+                if (assets != null) for (int i = 0; i < assets.length(); i++) {
+                    JSONObject a = assets.optJSONObject(i);
+                    if (a != null && a.optString("name").endsWith(".apk")) {
+                        apk = a.optString("browser_download_url");
+                        size = a.optLong("size");
+                        break;
+                    }
+                }
+                long current = installedCode();
+                emit(evt("update").put2("quiet", quiet).put2("latest", latest).put2("current", current)
+                        .put2("available", apk != null && latest > current).put2("url", apk == null ? "" : apk)
+                        .put2("size", size).put2("notes", r.optString("body")).put2("published", r.optString("published_at")));
+            } catch (IOException e) {
+                emit(evt("update").put2("quiet", quiet).put2("error", "offline"));
+            } catch (Exception e) {
+                emit(evt("update").put2("quiet", quiet).put2("error", "failed"));
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }).start();
+    }
+
+    /** Downloads the APK (only from github.com) with progress, then installs it. */
+    private void downloadUpdate(String url) {
+        if (url == null || !url.startsWith("https://github.com/" + UPDATE_REPO + "/")) {
+            emit(evt("updateError").put2("message", "Unexpected download address."));
+            return;
+        }
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            File out = updateFile();
+            //noinspection ResultOfMethodCallIgnored
+            out.getParentFile().mkdirs();
+            File tmp = new File(out.getParentFile(), "Pokedex.apk.part");
+            try {
+                c = (HttpURLConnection) new URL(url).openConnection();
+                c.setInstanceFollowRedirects(true);
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(60000);
+                c.setRequestProperty("User-Agent", "PersonalPokedexApp");
+                int code = c.getResponseCode();
+                if (code != 200) throw new IOException("HTTP " + code);
+                long total = c.getContentLengthLong();
+                long done = 0;
+                int lastPct = -1;
+                try (InputStream in = c.getInputStream(); java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        fo.write(buf, 0, n);
+                        done += n;
+                        int pct = total > 0 ? (int) (done * 100 / total) : -1;
+                        if (pct != lastPct && (pct < 0 || pct - lastPct >= 2 || pct == 100)) {
+                            lastPct = pct;
+                            emit(evt("updateProgress").put2("pct", pct).put2("done", done).put2("total", total));
+                        }
+                    }
+                }
+                if (out.exists()) //noinspection ResultOfMethodCallIgnored
+                    out.delete();
+                if (!tmp.renameTo(out)) throw new IOException("rename failed");
+                emit(evt("updateReady"));
+                runOnUiThread(this::installUpdateNow);
+            } catch (Exception e) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+                emit(evt("updateError").put2("message", "The download didn't finish. Check your connection and try again."));
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }).start();
+    }
+
+    /** Hands the APK to Android's package installer (it updates in place, keeping data). */
+    private void installUpdateNow() {
+        File f = updateFile();
+        if (!f.exists()) {
+            emit(evt("updateError").put2("message", "The update file is missing. Download it again."));
+            return;
+        }
+        if (!canInstall()) {
+            pendingInstall = true;
+            emit(evt("updatePermission"));
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+            } catch (ActivityNotFoundException e) {
+                toast("Open Settings → Apps → Pokédex → Install unknown apps, and allow it.");
+            }
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+        Intent i = new Intent(Intent.ACTION_VIEW);
+        i.setDataAndType(uri, "application/vnd.android.package-archive");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(i);
+        } catch (ActivityNotFoundException e) {
+            emit(evt("updateError").put2("message", "Android's installer couldn't be opened."));
+        }
     }
 
     @Override
@@ -443,6 +609,18 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String cacheSize() { return String.valueOf(net.size()); }
+
+        @JavascriptInterface
+        public void checkUpdate(boolean quiet) { MainActivity.this.checkUpdate(quiet); }
+
+        @JavascriptInterface
+        public void downloadUpdate(String url) { MainActivity.this.downloadUpdate(url); }
+
+        @JavascriptInterface
+        public void installUpdate() { runOnUiThread(MainActivity.this::installUpdateNow); }
+
+        @JavascriptInterface
+        public String buildNumber() { return String.valueOf(installedCode()); }
 
         @JavascriptInterface
         public String version() {

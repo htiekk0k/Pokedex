@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| Version | 1.0 (matches app build 11) |
+| Version | 1.1 (matches app build 13) |
 | Date | 26 November 2026 |
 | Owner | htiekk0k |
 | Status | Baseline: describes the implemented system |
@@ -114,6 +114,7 @@ See also the [component diagram](diagrams/component-diagram.md).
 7. Read the Pokédex entry aloud.
 8. Show Smogon sets for any rules (Gen I–IX, Champions) and format, and remember a default.
 9. Work offline for anything viewed before.
+10. Check for, download and install new versions from inside the app.
 
 ### 2.3 User classes and characteristics
 
@@ -174,6 +175,8 @@ The app has a single local user; there are no roles or permissions.
 | SI-8 | Google app (`com.google.android.googlequicksearchbox`) or Lens app (`com.google.ar.lens`) | Visual identification | `ACTION_SEND image/jpeg` + FileProvider URI |
 | SI-9 | Intents received: `ACTION_SEND` (text/plain, image/*), `ACTION_PROCESS_TEXT` | Look up from other apps | Android intents |
 | SI-10 | ClipboardManager | Return path from Lens; copy Showdown sets | Android API |
+| SI-11 | GitHub REST API `GET /repos/htiekk0k/Pokedex/releases/latest` and release asset download | In-app updates | HTTPS, JSON + APK |
+| SI-12 | Android package installer (`ACTION_VIEW` `application/vnd.android.package-archive`) and *Install unknown apps* settings | Installing updates | Intent + FileProvider URI |
 
 ### 3.4 Internal interface: JavaScript bridge
 The Java layer exposes `window.Native` to the UI and pushes events back with `window.onNative(event)`.
@@ -186,13 +189,15 @@ The Java layer exposes `window.Native` to the UI and pushes events back with `wi
 | JS → Java | `scan('lens-camera' \| 'lens-gallery' \| 'camera' \| 'gallery')` | Photo → Lens, or photo → OCR |
 | JS → Java | `checkClipboard()`, `stopLensWatch()` | Lens return path |
 | JS → Java | `copy(text)`, `openUrl(url)`, `toast(msg)` | Utilities |
-| JS → Java | `cacheSize()`, `clearCache()`, `version()` | Settings |
+| JS → Java | `cacheSize()`, `clearCache()`, `version()`, `buildNumber()` | Settings |
+| JS → Java | `checkUpdate(quiet)`, `downloadUpdate(url)`, `installUpdate()` | In-app updates |
 | Java → JS | `{type:'voice', results[]}` | Recognised phrases |
 | Java → JS | `{type:'ocr', lines[{t,h,y}]}` | Recognised text lines with heights |
 | Java → JS | `{type:'text', source, text}` | Shared, selected or clipboard text |
 | Java → JS | `{type:'lensBack'}` | Returned from Lens with nothing new copied |
 | Java → JS | `{type:'tts', state}` | Speaking started / finished |
 | Java → JS | `{type:'busy'|'cancel'|'error', …}` | Progress and errors |
+| Java → JS | `{type:'update'|'updateProgress'|'updateReady'|'updatePermission'|'updateError', …}` | Update check result, download progress, install state |
 | WebView → Java | `GET /net?u={url}&ttl={s}&w={px}` | Cached fetch (NetCache) |
 
 ---
@@ -319,6 +324,18 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-15.2 | Freshness: species index 7 days; PokéAPI and move data 30 days; Smogon sets 3 days; images forever. When stale and online, the app shall refresh; when offline, it shall serve the stored copy. | H |
 | FR-15.3 | Thumbnails shall be downscaled before storage (168 px list, 216 px evolution). | M |
 
+### 4.16 In-app updates (UC-12)
+| ID | Requirement | Pri |
+|---|---|---|
+| FR-16.1 | Settings shall show the installed build number and a *Check for updates* button. | H |
+| FR-16.2 | Checking shall read the latest GitHub Release, take the build number from its tag (`build-N`) and compare it with the installed version code. | H |
+| FR-16.3 | If newer, the app shall show the new build number, download size and the release's change description ("What's new"), with *Download and install* and *Later*. Otherwise it shall say the app is up to date. | H |
+| FR-16.4 | The download shall only be accepted from `https://github.com/htiekk0k/Pokedex/…`, show live progress and be stored in the app's private cache. | H |
+| FR-16.5 | The app shall hand the APK to Android's package installer. If installing from this app isn't allowed yet, it shall explain the one-time permission, open the *Install unknown apps* screen, and continue automatically on return. | H |
+| FR-16.6 | Updates shall install in place (same package name and signing key) so settings and saved data are kept. | H |
+| FR-16.7 | When *Check automatically once a day* is on (default), the app shall check at most once per 20 hours on launch and show an *Update available* banner on the home screen instead of interrupting. | M |
+| FR-16.8 | Each release shall include the triggering commit message as its description. | M |
+
 ---
 
 ## 5. Non-functional requirements
@@ -331,7 +348,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | NFR-4 | Storage | Cached data shall be clearable by the user; thumbnails shall be under ~40 KB each. |
 | NFR-5 | Privacy | The app shall collect no personal data and have no analytics. The clipboard shall be read only during the 15 minutes after a Lens hand-off. Photos stay in the app's private cache. |
 | NFR-6 | Security | Only HTTPS shall be used (cleartext disabled). The WebView shall have file and content access disabled. Only the app's own origin is served from assets; other links open in the browser. |
-| NFR-7 | Permissions | The only permission declared shall be `INTERNET`. Camera and microphone are used through other apps. |
+| NFR-7 | Permissions | Declared permissions shall be limited to `INTERNET` and `REQUEST_INSTALL_PACKAGES` (for in-app updates). Camera and microphone are used through other apps. |
 | NFR-8 | Usability | Touch targets ≥44 dp; type badges use readable text colours; reduced-motion settings disable animations. |
 | NFR-9 | Compatibility | Android 8.0+, phones and tablets, portrait and landscape. |
 | NFR-10 | Maintainability | UI logic in plain JavaScript without a framework; static game data isolated in `data.js`; Java limited to platform glue. |
@@ -353,7 +370,9 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 ### 6.3 Persistent data
 | Store | Contents |
 |---|---|
-| `localStorage['dex.settings']` | `rate, pitch, autoRead, format, smogonRules` |
+| `localStorage['dex.settings']` | `rate, pitch, autoRead, format, smogonRules, autoUpdate` |
+| `localStorage['dex.lastUpdateCheck']` | Time of the last update check |
+| `cache/updates/Pokedex.apk` | Downloaded update |
 | `files/net/{sha1(url[#wN])}` + `.type` | Cached response body and content type |
 | `cache/photos/scan.jpg`, `lens.jpg` | Last captured / forwarded photo |
 
@@ -379,6 +398,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | UC-09 View Smogon sets | FR-12.1–12.4, 12.6–12.7 |
 | UC-10 Set default rules & format | FR-12.5, FR-14 |
 | UC-11 Manage settings & saved data | FR-9.3, FR-14, FR-15 |
+| UC-12 Update the app | FR-16.1–16.8 |
 
 Detailed use-case descriptions are in [diagrams/use-case-diagram.md](diagrams/use-case-diagram.md).
 

@@ -34,6 +34,8 @@ flowchart TB
     pkmn["data.pkmn.cc"]
   end
   lens["Google app / Lens"]
+  gh["GitHub Releases"]
+  pi["Package installer"]
 
   js -- "window.Native.*" --> bridge
   bridge -- "onNative(event)" --> js
@@ -45,6 +47,8 @@ flowchart TB
   act -- "ACTION_SEND image" --> lens
   act --> fp
   lens -. "reads" .-> fp
+  act -- "check & download" --> gh
+  act -- "install APK" --> pi
 ```
 
 | Component | Responsibility | Source |
@@ -53,6 +57,6 @@ flowchart TB
 | `app.css` | Visual design, responsive layout | `…/www/app.css` |
 | `app.js` | All UI logic: index, search, filters, routing, tabs, pickers, name matching, speech UI | `…/www/app.js` |
 | `data.js` | Static reference data: type chart per generation, games ↔ generations, labels | `…/www/data.js` |
-| `MainActivity` | Hosts WebView, JavaScript bridge, intents (share, process-text), camera/gallery, OCR, Lens hand-off, clipboard return | `app/src/main/java/dev/personal/pokedex/MainActivity.java` |
+| `MainActivity` | Hosts WebView, JavaScript bridge, intents (share, process-text), camera/gallery, OCR, Lens hand-off, clipboard return, in-app updates | `app/src/main/java/dev/personal/pokedex/MainActivity.java` |
 | `NetCache` | HTTPS download, on-disk store with time-to-live, offline fallback, thumbnail downscaling | `…/NetCache.java` |
 | GitHub Actions | Builds the signed APK and publishes a Release on each push | `.github/workflows/build.yml` |

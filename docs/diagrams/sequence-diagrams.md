@@ -145,6 +145,45 @@ sequenceDiagram
   UI->>UI: button → Read entry aloud
 ```
 
+## S-6 In-app update
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant UI as UI (app.js)
+  participant Activity as MainActivity
+  participant GH as GitHub API / Releases
+  participant PI as Android package installer
+
+  User->>UI: Settings → Check for updates
+  UI->>Activity: Native.checkUpdate(false)
+  Activity->>GH: GET /repos/htiekk0k/Pokedex/releases/latest
+  GH-->>Activity: tag build-N, body, assets[Pokedex.apk]
+  Activity->>Activity: N > installed version code?
+  Activity->>UI: onNative({type:'update', available, latest, notes, url, size})
+  UI-->>User: "Update available" + What's new
+  User->>UI: Download and install
+  UI->>Activity: Native.downloadUpdate(url)
+  Activity->>Activity: check url is github.com/htiekk0k/Pokedex/…
+  Activity->>GH: GET release asset (redirect followed)
+  loop every ~2 %
+    Activity->>UI: onNative({type:'updateProgress', pct})
+  end
+  Activity->>Activity: save cache/updates/Pokedex.apk
+  alt install permission granted
+    Activity->>PI: ACTION_VIEW APK (FileProvider URI)
+  else not yet granted
+    Activity->>UI: onNative({type:'updatePermission'})
+    Activity->>User: open "Install unknown apps" for Pokédex
+    User->>Activity: allow, then back (onResume)
+    Activity->>PI: ACTION_VIEW APK
+  end
+  PI-->>User: "Update this app?"
+  User->>PI: Update
+  PI->>PI: replace APK in place (same key → data kept)
+```
+
 ## S-5 Smogon tab
 
 ```mermaid

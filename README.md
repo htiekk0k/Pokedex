@@ -8,6 +8,8 @@ Every push to `main` builds the app on GitHub Actions and publishes it under **R
 On your phone open this repository → **Releases** → latest build → tap **Pokedex.apk** → install
 (allow "install unknown apps" for your browser the first time). New builds install over the old one and keep your saved data.
 
+After that, update from inside the app: **Settings → App updates → Check for updates** (it also checks once a day and shows a banner).
+
 ## How it finds Pokémon (no AI service needed)
 
 - **Search** by name or number, filter by type.

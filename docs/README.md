@@ -3,9 +3,9 @@
 | Document | What's in it |
 |---|---|
 | [Software Requirements Specification](SRS.md) | Scope, users, environment, constraints, interfaces, functional requirements (FR), non-functional requirements (NFR), data, traceability, limitations |
-| [Use case diagram](diagrams/use-case-diagram.md) | Actors, 11 use cases with «include»/«extend», and a full description of each use case |
+| [Use case diagram](diagrams/use-case-diagram.md) | Actors, 12 use cases with «include»/«extend», and a full description of each use case |
 | [Activity diagrams](diagrams/activity-diagrams.md) | Lens identification · name matching · opening a Pokémon page · choosing Smogon rules and format |
-| [Sequence diagrams](diagrams/sequence-diagrams.md) | App start · opening a page · Lens round trip · read aloud · Smogon tab |
+| [Sequence diagrams](diagrams/sequence-diagrams.md) | App start · opening a page · Lens round trip · read aloud · in-app update · Smogon tab |
 | [State diagrams](diagrams/state-diagrams.md) | App screens · Lens return watcher · read-aloud button · cached resource · Smogon selection |
 | [Component diagram](diagrams/component-diagram.md) | Web UI, Android shell, platform services and data sources |
 
@@ -29,6 +29,7 @@ Diagrams are written in [Mermaid](https://mermaid.js.org), which GitHub draws di
 | S-3 | Lens round trip | [seq-lens.svg](diagrams/img/seq-lens.svg) |
 | S-4 | Read entry aloud | [seq-read-aloud.svg](diagrams/img/seq-read-aloud.svg) |
 | S-5 | Smogon tab | [seq-smogon.svg](diagrams/img/seq-smogon.svg) |
+| S-6 | In-app update | [seq-update.svg](diagrams/img/seq-update.svg) |
 | ST-1 | App screens | [state-screens.svg](diagrams/img/state-screens.svg) |
 | ST-2 | Lens return watcher | [state-lens-watcher.svg](diagrams/img/state-lens-watcher.svg) |
 | ST-3 | Read-aloud button | [state-read-aloud.svg](diagrams/img/state-read-aloud.svg) |

@@ -230,3 +230,7 @@ select{font:600 16px var(--body);min-height:44px;border-radius:10px;border:2px s
 .statv{color:var(--shell-d);font-weight:700}
 .count .linkish{font-size:13px}
 .chip.filt{display:inline-flex;align-items:center;gap:6px}.chip.filt svg{width:16px;height:16px}
+.upd-banner{display:flex;align-items:center;gap:8px;width:calc(100% - 24px);margin:12px 12px 0;min-height:48px;border:0;border-radius:12px;background:var(--led-y);color:#3a2c00;padding:0 14px;font:500 15px var(--body);text-align:left}
+.upd-banner span{margin-left:auto;font-weight:700;background:#3a2c00;color:var(--led-y);border-radius:8px;padding:6px 12px}
+.upd-track{height:14px;border-radius:7px;background:#dfe3e6;overflow:hidden;margin:8px 0}
+.upd-fill{height:100%;background:var(--shell);border-radius:7px;transition:width .2s}

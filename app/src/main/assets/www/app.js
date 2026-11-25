@@ -33,7 +33,7 @@ const idFromUrl = u => parseInt(String(u).split('/').filter(Boolean).pop(), 10);
 const en = arr => (arr || []).filter(x => x.language && x.language.name === 'en');
 
 // ------------------------------------------------------------- settings
-const DEF = {gen: 9, rate: 0.95, pitch: 0.85, autoRead: true, format: 'ou'};
+const DEF = {gen: 9, rate: 0.95, pitch: 0.85, autoRead: true, format: 'ou', autoUpdate: true};
 let S = (() => { try { return {...DEF, ...JSON.parse(localStorage.getItem('dex.settings') || '{}')}; } catch (e) { return {...DEF}; } })();
 S.gen = 9; // no generation setting: pages use the latest data, with per-game pickers
 const save = () => { try { localStorage.setItem('dex.settings', JSON.stringify(S)); } catch (e) { /* ignore */ } };
@@ -929,6 +929,7 @@ function textToLines(text) {
 }
 
 function handleNative(ev) {
+  if (/^update/.test(ev.type)) { handleUpdateEvent(ev); return; }
   switch (ev.type) {
     case 'busy': showBusy(ev.label || 'Working…'); break;
     case 'cancel': hideBusy(); break;
@@ -963,6 +964,55 @@ function handleNative(ev) {
   }
 }
 
+// ============================================================ UPDATES
+let updateInfo = null;
+const mb = b => (b / 1048576).toFixed(1) + ' MB';
+function checkForUpdates(quiet) {
+  if (!N || !N.checkUpdate) { if (!quiet) alertSheet('Updates work in the Android app.'); return; }
+  if (!quiet) openSheet('<h2>Checking for updates…</h2><div class="skeleton" style="height:64px"></div>');
+  try { localStorage.setItem('dex.lastUpdateCheck', String(Date.now())); } catch (e) { /* ignore */ }
+  N.checkUpdate(!!quiet);
+}
+function cleanNotes(t) {
+  return String(t || '').split('\n').filter(l => !/Pokedex\.apk/i.test(l)).join('\n').trim();
+}
+function updateSheet(u) {
+  const notes = cleanNotes(u.notes);
+  openSheet(`<h2>Update available</h2>
+    <p><b>Build ${u.latest}</b> · you have build ${u.current}${u.size ? ' · ' + mb(u.size) : ''}</p>
+    ${notes ? `<h3>What’s new</h3><div class="ocr-text" style="max-height:200px">${esc(notes)}</div>` : ''}
+    <p class="note">Your settings and saved Pokémon data are kept. Android will ask you to confirm the install.</p>
+    <div class="pick-list"><button type="button" class="btn red" data-act="update-go">Download and install</button>
+    <button type="button" class="btn ghost" data-act="close-sheet">Later</button></div>`);
+}
+function progressSheet(pct, done, total) {
+  const bar = $('#updBar');
+  const label = pct >= 0 ? `${pct}%${total > 0 ? ' · ' + mb(done) + ' of ' + mb(total) : ''}` : mb(done);
+  if (bar) { bar.style.width = Math.max(2, pct) + '%'; $('#updLabel').textContent = label; return; }
+  openSheet(`<h2>Downloading update</h2><div class="upd-track"><div class="upd-fill" id="updBar" style="width:${Math.max(2, pct)}%"></div></div>
+    <p class="note" id="updLabel">${label}</p><p class="note">Keep the app open until the installer appears.</p>`);
+}
+function renderUpdateBanner() {
+  const u = updateInfo;
+  $('#updBanner').innerHTML = u && u.available
+    ? `<button type="button" class="upd-banner" data-act="update-show"><b>Update available</b> · build ${u.latest}<span>Install</span></button>` : '';
+}
+function handleUpdateEvent(ev) {
+  switch (ev.type) {
+    case 'update':
+      if (ev.error) { if (!ev.quiet) openSheet(`<h2>Couldn’t check for updates</h2><p>${ev.error === 'offline' ? 'You seem to be offline.' : 'GitHub didn’t answer properly.'} Try again in a moment.</p><div class="pick-list"><button type="button" class="btn" data-act="update-check">Try again</button></div>`); return; }
+      updateInfo = ev; renderUpdateBanner();
+      if (ev.available) { if (!ev.quiet) updateSheet(ev); }
+      else if (!ev.quiet) openSheet(`<h2>You’re up to date</h2><p>Build ${ev.current} is the latest version.</p>`);
+      return;
+    case 'updateProgress': progressSheet(ev.pct, ev.done, ev.total); return;
+    case 'updateReady': openSheet('<h2>Installing…</h2><p>Android’s installer will open. Tap <b>Update</b> to finish. The app restarts on the new version with your data kept.</p>'); return;
+    case 'updatePermission': openSheet(`<h2>One-time permission</h2><p>Android needs your OK for Pokédex to install updates. On the next screen turn on <b>Allow from this source</b>, then come back. The install continues on its own.</p>
+      <div class="pick-list"><button type="button" class="btn red" data-act="update-install">I’ve allowed it. Install</button></div>`); return;
+    case 'updateError': openSheet(`<h2>Update failed</h2><p>${esc(ev.message || 'Something went wrong.')}</p><div class="pick-list"><button type="button" class="btn" data-act="update-check">Try again</button></div>`); return;
+  }
+}
+
 // ======================================================= SHEETS & BUSY
 function openSheet(html) { $('#sheetBody').innerHTML = html; $('#sheet').hidden = false; }
 function closeSheet() { $('#sheet').hidden = true; $('#sheetBody').innerHTML = ''; }
@@ -990,6 +1040,10 @@ function settingsSheet() {
     <h3>Saved data</h3>
     <p class="note">Everything you open is saved on your phone so it works offline.${N ? ` Using ${(size / 1048576).toFixed(1)} MB.` : ''}</p>
     <button type="button" class="btn ghost" data-act="clear-cache">Clear saved data</button>
+    <h3>App updates</h3>
+    <p class="note">${N && N.buildNumber ? `You have build ${esc(N.buildNumber())}.` : ''} Updates come from the GitHub Releases page.</p>
+    <button type="button" class="btn ghost" data-act="update-check">Check for updates</button>
+    <label class="toggle">Check automatically once a day<input type="checkbox" id="autoUpdate" ${S.autoUpdate ? 'checked' : ''}></label>
     <h3>About</h3>
     <p class="note">Personal fan-made Pokédex${N ? ' v' + esc(N.version()) : ''}. Data from PokéAPI (pokeapi.co), Pokémon Showdown, and Smogon University sets via data.pkmn.cc. Pokémon and related names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This app isn’t affiliated with them.</p>`);
 }
@@ -1064,6 +1118,10 @@ document.addEventListener('click', ev => {
     case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
     case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
     case 'lens': lensSheet(); break;
+    case 'update-check': checkForUpdates(false); break;
+    case 'update-show': if (updateInfo) updateSheet(updateInfo); break;
+    case 'update-go': if (N && updateInfo && updateInfo.url) { progressSheet(0, 0, updateInfo.size || 0); N.downloadUpdate(updateInfo.url); } break;
+    case 'update-install': closeSheet(); if (N) N.installUpdate(); break;
     case 'filters': filterSheet(); break;
     case 'filters-reset': F = F0(); if (!$('#sheet').hidden && $('#fShow')) filterSheet(); renderTypeFilter(); renderList(true); break;
     case 'pick-ver': {
@@ -1103,6 +1161,7 @@ document.addEventListener('change', ev => {
   if (t.id === 'vgSel') { cur.vg = t.value; renderPane(); }
   if (t.id === 'verSel') { cur.version = t.value; stopSpeaking(); renderPane(); }
   if (t.id === 'autoRead') { S.autoRead = t.checked; save(); }
+  if (t.id === 'autoUpdate') { S.autoUpdate = t.checked; save(); }
   if (t.id === 'fmtSel') { S.format = t.value; save(); if (cur) cur.fmt = null; }
   if (t.id === 'rulesSel') { S.smogonRules = t.value || null; save(); smogonRules = null; if (cur) cur.fmt = null; }
   if (t.id === 'fmtPick') { cur.fmt = t.value; renderPane(); }
@@ -1138,4 +1197,10 @@ boot();
 window.onNative = ev => { ready.then(() => handleNative(ev)).catch(() => {}); };
 route();
 if (N) N.ready();
+// Daily background check for a newer build (shows a banner, never interrupts).
+ready.then(() => {
+  let last = 0;
+  try { last = +localStorage.getItem('dex.lastUpdateCheck') || 0; } catch (e) { /* ignore */ }
+  if (S.autoUpdate && Date.now() - last > 20 * 3600 * 1000) setTimeout(() => checkForUpdates(true), 1500);
+}).catch(() => {});
 }
