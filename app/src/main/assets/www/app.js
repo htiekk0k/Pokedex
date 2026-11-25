@@ -114,15 +114,13 @@ const tb = t => `<span class="tb${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="
 // ================================================================ HOME
 let query = '', typeFilter = null, limit = 60, homeScroll = 0;
 
-function genPillText() { return 'Gen ' + D.ROMAN[S.gen]; }
 
 function filtered() {
   const raw = query.trim();
   const qNum = /^#?\d+$/.test(raw) ? parseInt(raw.replace('#', ''), 10) : null;
   const q = norm(raw);
   return INDEX.filter(e => {
-    if (e.gen > S.gen) return false;
-    if (typeFilter && !D.typesInGen(e.types, S.gen).includes(typeFilter)) return false;
+    if (typeFilter && !e.types.includes(typeFilter)) return false;
     if (!raw) return true;
     if (qNum !== null) return e.num === qNum || String(e.num).startsWith(String(qNum));
     return norm(e.name).includes(q) || norm(displayName(e)).includes(q);
@@ -130,8 +128,7 @@ function filtered() {
 }
 
 function renderTypeFilter() {
-  const types = D.typesForGen(S.gen);
-  if (typeFilter && !types.includes(typeFilter)) typeFilter = null;
+  const types = D.TYPES;
   $('#typeFilter').innerHTML = `<button type="button" class="chip" data-type="" aria-pressed="${!typeFilter}">All types</button>` +
     types.map(t => `<button type="button" class="chip t${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}" data-type="${t}" aria-pressed="${typeFilter === t}">${t}</button>`).join('');
 }
@@ -139,18 +136,17 @@ function renderTypeFilter() {
 function renderList(reset) {
   if (reset) limit = 60;
   const list = filtered();
-  $('#count').textContent = `${list.length.toLocaleString()} Pokémon · Gen ${D.ROMAN[S.gen]} (${D.GENS[S.gen].region})`;
+  $('#count').textContent = `${list.length.toLocaleString()} Pokémon`;
   $('#list').innerHTML = list.slice(0, limit).map(e => `<li><button type="button" class="dex-row" data-id="${e.id}">
       ${imgTag(spriteOf(e), e.name)}
       <span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(e.forme ? displayName(e) : e.name)}${e.forme ? `<small>${esc(formeLabel(e))}</small>` : ''}</span></span>
-      <span class="types">${D.typesInGen(e.types, S.gen).map(tb).join('')}</span></button></li>`).join('');
+      <span class="types">${e.types.map(tb).join('')}</span></button></li>`).join('');
   $('#homeMsg').innerHTML = list.length ? '' :
-    `<div class="msg"><b>No match</b>Nothing in Gen ${D.ROMAN[S.gen]} matches “${esc(query)}”. Try another name, or switch generation.</div>`;
+    `<div class="msg"><b>No match</b>Nothing matches “${esc(query)}”. Try another name or number.</div>`;
   $('#more').dataset.left = Math.max(0, list.length - limit);
 }
 
 function renderHome() {
-  $('#genPill').textContent = genPillText();
   renderTypeFilter();
   renderList(true);
 }
@@ -176,7 +172,6 @@ function route() {
   } else {
     stopSpeaking();
     $('#detail').hidden = true; $('#home').hidden = false;
-    $('#genPill').textContent = genPillText();
     requestAnimationFrame(() => window.scrollTo(0, homeScroll));
   }
 }
@@ -249,7 +244,6 @@ async function showDetail(id) {
   const keepTab = cur && cur.e.base === e.base ? cur.tab : 'entry';
   cur = {e, tab: keepTab, species: null, pokemon: null, version: null, vg: null, fmt: null, sets: null};
   $('#barTitle').textContent = displayName(e);
-  $('#genPill2').textContent = genPillText();
   $('#detailBody').innerHTML = heroHTML() + `<div class="pane"><div class="skeleton"></div><div class="skeleton"></div></div>`;
   try {
     const species = await getJSON(API + 'pokemon-species/' + e.num);
@@ -279,7 +273,7 @@ function heroHTML() {
   const other = pokemon && pokemon.sprites && pokemon.sprites.other;
   const art = other && ((other['official-artwork'] || {}).front_default || (other.home || {}).front_default);
   const urls = art ? [art, spriteOf(e)[0]] : spriteOf(e);
-  const forms = (BASES[e.base] || []).filter(f => f.gen <= S.gen);
+  const forms = BASES[e.base] || [];
   const genus = species ? genusOf(species) : '';
   return `<section class="hero">
     <div class="screen-frame">
@@ -796,7 +790,7 @@ function handleFound(cands, rawText) {
   if (cands.length === 1 || cands[0].s >= cands[1].s * 1.3) { closeSheet(); go(cands[0].e.id, true); return; }
   openSheet(`<h2>Which one?</h2><div class="pick-list">${cands.slice(0, 8).map(({e}) => `<button type="button" class="dex-row" data-pick="${e.id}">
       ${imgTag(spriteOf(e), e.name)}<span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(displayName(e))}</span></span>
-      <span class="types">${D.typesInGen(e.types, S.gen).map(tb).join('')}</span></button>`).join('')}</div>`);
+      <span class="types">${e.types.map(tb).join('')}</span></button>`).join('')}</div>`);
 }
 
 function textToLines(text) {
@@ -858,10 +852,10 @@ const FORMAT_CHOICES = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe'
 function settingsSheet() {
   const size = N ? +N.cacheSize() : 0;
   openSheet(`<h2>Settings</h2>
-    <h3>Generation rules</h3>
+    <h3>Game generation</h3>
     <div class="gen-grid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => `<button type="button" class="gen-btn" data-gen="${g}" aria-pressed="${g === S.gen}"><b>Gen ${D.ROMAN[g]}</b><span>${D.GENS[g].region}</span></button>`).join('')}</div>
     <p class="gen-games" id="genGames">${esc(D.GENS[S.gen].games)}</p>
-    <p class="note">Changes which Pokémon appear, their types, abilities, stats, Pokédex entries, learnsets and type matchups. The Smogon tab has its own generation picker.</p>
+    <p class="note">Used on each Pokémon’s page: Pokédex entries, moves, types, abilities, stats and type matchups as they were in those games. The list always shows every Pokémon, and the Smogon tab has its own rules picker.</p>
     <h3>Voice</h3>
     <div class="field"><label for="rate">Speed <span id="rateV">${S.rate.toFixed(2)}×</span></label><input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="${S.rate}"></div>
     <div class="field"><label for="pitch">Pitch <span id="pitchV">${S.pitch.toFixed(2)}</span></label><input id="pitch" type="range" min="0.5" max="1.5" step="0.05" value="${S.pitch}"></div>
@@ -935,7 +929,7 @@ document.addEventListener('click', ev => {
     $('#genGames').textContent = D.GENS[S.gen].games;
     if (cur) { cur.vg = null; cur.version = null; cur.fmt = null; }
     renderHome();
-    if (!$('#detail').hidden && cur && cur.species) { $('#genPill2').textContent = genPillText(); renderDetail(); }
+    if (!$('#detail').hidden && cur && cur.species) renderDetail();
     return;
   }
   switch (d.act) {
@@ -965,8 +959,8 @@ document.addEventListener('click', ev => {
     case 'retry-index': boot().then(route).catch(() => {}); break;
   }
 });
-$('#genPill').addEventListener('click', settingsSheet);
-$('#genPill2').addEventListener('click', settingsSheet);
+$('#settingsBtn').addEventListener('click', settingsSheet);
+$('#settingsBtn2').addEventListener('click', settingsSheet);
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.id === 'vgSel') { cur.vg = t.value; renderPane(); }
@@ -1002,7 +996,6 @@ function boot() {
   return ready;
 }
 boot();
-$('#genPill').textContent = genPillText();
 window.onNative = ev => { ready.then(() => handleNative(ev)).catch(() => {}); };
 route();
 if (N) N.ready();
