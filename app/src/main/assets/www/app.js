@@ -508,6 +508,11 @@ const fmtVal = v => Array.isArray(v) ? v.map(fmtVal).join(' / ') : (v && typeof 
 const fmtSpread = v => Array.isArray(v) ? v.map(spread).join('  or  ') : spread(v);
 const first = v => Array.isArray(v) ? first(v[0]) : v;
 
+const FMT_ORDER = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe', 'monotype', 'doublesou', 'vgc', 'bss', 'nationaldex', '1v1', 'anythinggoes', 'ag'];
+function fmtRank(f) {
+  const i = FMT_ORDER.findIndex(p => f === p || ((p === 'vgc' || p === 'bss' || p === 'nationaldex') && f.startsWith(p)));
+  return i < 0 ? 99 : i;
+}
 function pickFormat(formats) {
   const want = cur.fmt || S.format;
   if (formats.includes(want)) return want;
@@ -524,7 +529,11 @@ async function paneSmogon(pane) {
   try { data = await getJSON(`https://data.pkmn.cc/sets/gen${gen}.json`, 3 * DAY); }
   catch (err) { if (my === token && cur.tab === 'smogon') pane.innerHTML = errorCard(err, 'retry-pane'); return; }
   if (my !== token || cur.tab !== 'smogon') return;
-  const formats = Object.keys(data).filter(t => data[t] && typeof data[t] === 'object' && data[t][e.name]);
+  // gen<N>.json is species → tier → set name → set. (Older/other files may be tier → species.)
+  let byFmt = {};
+  if (data[e.name] && typeof data[e.name] === 'object') byFmt = data[e.name];
+  else for (const t of Object.keys(data)) if (data[t] && typeof data[t] === 'object' && data[t][e.name]) byFmt[t] = data[t][e.name];
+  const formats = Object.keys(byFmt).filter(f => byFmt[f] && Object.keys(byFmt[f]).length).sort((a, b) => fmtRank(a) - fmtRank(b) || a.localeCompare(b));
   const dexLink = `https://www.smogon.com/dex/${D.GENS[gen].smogon}/pokemon/${smogonSlug(e.name)}/`;
   const linkBtn = `<button type="button" class="btn ghost" data-url="${dexLink}"><svg><use href="#i-ext"/></svg>Open on Smogon</button>`;
   if (!formats.length) {
@@ -532,7 +541,7 @@ async function paneSmogon(pane) {
     return;
   }
   const fmt = cur.fmt = pickFormat(formats);
-  const sets = cur.sets = data[fmt][e.name];
+  const sets = cur.sets = byFmt[fmt];
   pane.innerHTML = `<section class="card"><h3>Format <small>Gen ${D.ROMAN[gen]}</small></h3>
       <div class="games scroll">${formats.map(f => `<button type="button" class="chip" data-fmt="${f}" aria-pressed="${f === fmt}">${esc(D.tierLabel(f))}</button>`).join('')}</div>
       <p class="note">Sets written by Smogon University contributors (via data.pkmn.cc).</p></section>
