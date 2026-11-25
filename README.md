@@ -12,8 +12,8 @@ On your phone open this repository → **Releases** → latest build → tap **P
 
 - **Search** by name or number, filter by type.
 - **Say it**: phone speech recognition.
-- **Scan card / Picture**: on-device text recognition (ML Kit) reads the name printed on a card, game screen or screenshot.
-- **Lens**: in Google Lens or Circle to Search, select the Pokémon's name and pick **Pokédex** from the text menu, or share the result to the app.
+- **Share a screenshot** to the app: on-device text recognition (ML Kit) reads the Pokémon name written on it.
+- **Identify with Lens**: take or pick a photo, it opens in Google Lens; copy the name and come back (or select it → **Pokédex**).
 
 ## Data sources
 
