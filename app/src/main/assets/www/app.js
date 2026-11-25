@@ -737,13 +737,11 @@ function setMoveRow(name) {
     <span class="smove-top"><b>${esc(name)}</b>${m.type ? tb(m.type) : ''}${catIcon(m.cat)}${pri}</span>
     ${stats ? `<span class="smove-stats">${stats}</span>` : ''}<span class="smove-desc" hidden></span></button>`;
 }
-// Sets: one numbered box per move slot; alternatives inside it separated by OR.
+// Sets: one box per move slot; alternatives inside it separated by an OR line.
 function setMovesHTML(moves) {
   return `<ol class="set-moves">${(moves || []).map((m, i) => {
     const opts = Array.isArray(m) ? m : [m];
-    const head = opts.length > 1 ? `Move ${i + 1} · pick 1 of ${opts.length}` : `Move ${i + 1}`;
-    return `<li class="slot${opts.length > 1 ? ' multi' : ''}"><span class="slot-h"><span class="slot-n">${i + 1}</span>${head}</span>
-      ${opts.map(setMoveRow).join('<span class="or">or</span>')}</li>`;
+    return `<li class="slot" aria-label="Move ${i + 1}${opts.length > 1 ? ', choose one' : ''}">${opts.map(setMoveRow).join('<span class="or">or</span>')}</li>`;
   }).join('')}</ol>`;
 }
 // Random Battle: a pool to choose from, not fixed slots.
