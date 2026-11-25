@@ -35,6 +35,7 @@ const en = arr => (arr || []).filter(x => x.language && x.language.name === 'en'
 // ------------------------------------------------------------- settings
 const DEF = {gen: 9, rate: 0.95, pitch: 0.85, autoRead: true, format: 'ou'};
 let S = (() => { try { return {...DEF, ...JSON.parse(localStorage.getItem('dex.settings') || '{}')}; } catch (e) { return {...DEF}; } })();
+S.gen = 9; // no generation setting: pages use the latest data, with per-game pickers
 const save = () => { try { localStorage.setItem('dex.settings', JSON.stringify(S)); } catch (e) { /* ignore */ } };
 
 // ----------------------------------------------------------------- index
@@ -219,19 +220,14 @@ function statsAt(p, gen) {
 const vgGen = vg => D.VG_GEN[vg] || 9;
 const verGen = v => D.VERSION_GEN[v] || 9;
 
-function flavorFor(species, gen) {
+const VERSION_ORDER = Object.keys(D.VERSION_GEN);
+function flavorFor(species) {
   const all = en(species.flavor_text_entries).map(f => ({v: f.version.name, g: verGen(f.version.name),
-    text: f.flavor_text.replace(/[\f\n\r­]+/g, ' ').replace(/\s+/g, ' ').replace(/pok[eé]mon/gi, 'Pokémon').trim()}));
-  let list = all.filter(f => f.g === gen), note = '';
-  if (!list.length && all.length) {
-    const older = all.filter(f => f.g < gen).sort((a, b) => b.g - a.g);
-    const g = older.length ? older[0].g : Math.min(...all.map(f => f.g));
-    list = all.filter(f => f.g === g);
-    note = `No English entry in Gen ${D.ROMAN[gen]} games. Showing Gen ${D.ROMAN[g]}.`;
-  }
+    text: f.flavor_text.replace(/[\f\n\r\u00ad]+/g, ' ').replace(/\s+/g, ' ').replace(/pok[eé]mon/gi, 'Pokémon').trim()}));
   const seen = new Set();
-  list = list.filter(f => !seen.has(f.v) && seen.add(f.v));
-  return {list, note};
+  const list = all.filter(f => !seen.has(f.v) && seen.add(f.v))
+    .sort((a, b) => a.g - b.g || ((VERSION_ORDER.indexOf(a.v) + 1 || 999) - (VERSION_ORDER.indexOf(b.v) + 1 || 999)));
+  return {list, note: ''};
 }
 const genusOf = sp => (en(sp.genera)[0] || {}).genus || '';
 
@@ -316,7 +312,7 @@ const verLabel = v => D.VERSION_LABEL[v] || title(v);
 function paneEntry(pane) {
   const {e, species: sp, pokemon: p} = cur;
   const gen = S.gen;
-  const fl = flavorFor(sp, gen);
+  const fl = flavorFor(sp);
   if (!cur.version || !fl.list.find(f => f.v === cur.version)) cur.version = fl.list.length ? fl.list[fl.list.length - 1].v : null;
   const shown = fl.list.find(f => f.v === cur.version);
   const types = typesAt(p, gen);
@@ -332,7 +328,7 @@ function paneEntry(pane) {
   pane.innerHTML = `
     <section class="card">
       <h3>Pokédex entry</h3>
-      ${fl.list.length > 1 ? `<div class="games scroll">${fl.list.map(f => `<button type="button" class="chip" data-version="${f.v}" aria-pressed="${f.v === cur.version}">${esc(verLabel(f.v))}</button>`).join('')}</div>` : ''}
+      ${fl.list.length > 1 ? `<div class="field"><label for="verSel">Game</label><select id="verSel">${byGen(fl.list, f => f.g, f => `<option value="${f.v}" ${f.v === cur.version ? 'selected' : ''}>${esc(verLabel(f.v))}</option>`)}</select></div>` : ''}
       <p class="entry-text">${shown ? esc(shown.text) : 'No English Pokédex entry for this Pokémon yet.'}</p>
       ${shown && fl.list.length === 1 ? `<p class="note">${esc(verLabel(shown.v))}</p>` : ''}
       ${fl.note ? `<p class="note">${esc(fl.note)}</p>` : ''}
@@ -357,7 +353,7 @@ function paneEntry(pane) {
       <tr><th>Gender</th><td>${gender}</td></tr>
       <tr><th>Egg cycles</th><td>${sp.hatch_counter ?? '—'}</td></tr>
     </tbody></table></section>` : ''}
-    <section class="card"><h3>Type defenses <small>damage taken in Gen ${D.ROMAN[gen]}</small></h3>${defensesHTML(types, gen)}</section>`;
+    <section class="card"><h3>Type defenses</h3>${defensesHTML(types, gen)}</section>`;
 }
 
 function defensesHTML(types, gen) {
@@ -411,9 +407,14 @@ const PREF_VG = {1:'yellow', 2:'crystal', 3:'emerald', 4:'platinum', 5:'black-2-
   7:'ultra-sun-ultra-moon', 8:'sword-shield', 9:'scarlet-violet'};
 const METHOD = {'level-up':'Level up', machine:'TM / HM / TR', egg:'Egg moves', tutor:'Move tutor'};
 
-function vgsIn(p, gen) {
+// <optgroup> per generation, newest generation first
+function byGen(items, genOf, render) {
+  const gens = [...new Set(items.map(genOf))].sort((a, b) => b - a);
+  return gens.map(g => `<optgroup label="Gen ${D.ROMAN[g] || g}">${items.filter(x => genOf(x) === g).slice().reverse().map(render).join('')}</optgroup>`).join('');
+}
+function vgsIn(p) {
   const s = new Set();
-  for (const m of p.moves || []) for (const d of m.version_group_details) if (vgGen(d.version_group.name) === gen) s.add(d.version_group.name);
+  for (const m of p.moves || []) for (const d of m.version_group_details) s.add(d.version_group.name);
   return [...s].sort((a, b) => (D.VG_ORDER[a] ?? 999) - (D.VG_ORDER[b] ?? 999));
 }
 
@@ -421,21 +422,26 @@ async function paneMoves(pane) {
   pane.innerHTML = '<div class="skeleton"></div>';
   const my = token;
   let p = cur.pokemon, note = '';
-  if (!vgsIn(p, S.gen).length && cur.e.forme) {
+  if (!vgsIn(p).length && cur.e.forme) {
     try {
       const def = (cur.species.varieties || []).find(v => v.is_default);
-      if (def) { const base = await getJSON(def.pokemon.url); if (vgsIn(base, S.gen).length) { p = base; note = `Showing ${cur.e.base}’s moves. This form has no separate move list for these games.`; } }
+      if (def) { const base = await getJSON(def.pokemon.url); if (vgsIn(base).length) { p = base; note = `Showing ${cur.e.base}’s moves. This form has no separate move list.`; } }
     } catch (err) { /* keep form data */ }
   }
   let movedb = {};
   try { movedb = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { /* names only */ }
   if (my !== token || cur.tab !== 'moves') return;
-  const vgs = vgsIn(p, S.gen);
+  const vgs = vgsIn(p);
   if (!vgs.length) {
-    pane.innerHTML = `<div class="msg"><b>No moves listed</b>PokéAPI has no Gen ${D.ROMAN[S.gen]} move data for this Pokémon. It may not appear in those games.</div>`;
+    pane.innerHTML = `<div class="msg"><b>No moves listed</b>PokéAPI has no move data for this Pokémon yet.</div>`;
     return;
   }
-  if (!vgs.includes(cur.vg)) cur.vg = vgs.includes(PREF_VG[S.gen]) ? PREF_VG[S.gen] : vgs[vgs.length - 1];
+  if (!vgs.includes(cur.vg)) {
+    const latestGen = Math.max(...vgs.map(vgGen));
+    const main = PREF_VG[latestGen];
+    cur.vg = vgs.includes(main) ? main : vgs.filter(v => vgGen(v) === latestGen).pop();
+  }
+  const mgen = vgGen(cur.vg);
   const groups = {};
   for (const m of p.moves) for (const d of m.version_group_details) {
     if (d.version_group.name !== cur.vg) continue;
@@ -450,10 +456,10 @@ async function paneMoves(pane) {
     const showLv = k === 'level-up';
     return `<section class="card"><h3>${METHOD[k] || title(k)} <small>${list.length}</small></h3>
       <table class="mtable"><thead><tr>${showLv ? '<th>Lv</th>' : ''}<th>Move</th><th>Type</th><th>Cat</th><th class="r">Pwr</th><th class="r">Acc</th></tr></thead>
-      <tbody>${list.map(r => moveRow(movedb, r, showLv)).join('')}</tbody></table></section>`;
+      <tbody>${list.map(r => moveRow(movedb, r, showLv, mgen)).join('')}</tbody></table></section>`;
   }).join('');
   pane.innerHTML = `<section class="card"><div class="selrow"><label for="vgSel"><b>Game</b></label>
-      <select id="vgSel">${vgs.map(v => `<option value="${v}" ${v === cur.vg ? 'selected' : ''}>${esc(D.VG_LABEL[v] || title(v))}</option>`).join('')}</select></div>
+      <select id="vgSel">${byGen(vgs, vgGen, v => `<option value="${v}" ${v === cur.vg ? 'selected' : ''}>${esc(D.VG_LABEL[v] || title(v))}</option>`)}</select></div>
       ${note ? `<p class="note">${esc(note)}</p>` : ''}<p class="note">Tap a move for its effect. Power and accuracy are from the latest games.</p></section>${sections}`;
 }
 function moveName(db, slug) { const m = db[slug.replace(/-/g, '')]; return m ? m.name : title(slug); }
@@ -468,8 +474,8 @@ function moveInfo(db, slug, gen) {
   return {name: m.name || title(slug), type, cat, bp: m.basePower ? m.basePower : '—',
     acc: m.accuracy === true ? '—' : (m.accuracy ?? '—'), pp: m.pp, pri: m.priority};
 }
-function moveRow(db, r, showLv) {
-  const m = moveInfo(db, r.name, S.gen);
+function moveRow(db, r, showLv, gen) {
+  const m = moveInfo(db, r.name, gen);
   return `<tr class="mrow" data-move="${r.name}">${showLv ? `<td class="lv">${r.level || 'Evo'}</td>` : ''}
     <td class="mv">${esc(m.name)}</td><td>${m.type ? tb(m.type) : ''}</td>
     <td>${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}</td>
@@ -485,7 +491,7 @@ async function toggleMove(tr) {
   tr.after(ex);
   let db = {};
   try { db = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { /* ignore */ }
-  const info = moveInfo(db, slug, S.gen);
+  const info = moveInfo(db, slug, cur && cur.vg ? vgGen(cur.vg) : 9);
   let text = '';
   try {
     const mv = await getJSON(API + 'move/' + slug);
@@ -716,7 +722,7 @@ function stopSpeaking() {
 function speakEntry() {
   if (!cur || !cur.species) return;
   if (speaking) { stopSpeaking(); return; }
-  const fl = flavorFor(cur.species, S.gen);
+  const fl = flavorFor(cur.species);
   const shown = fl.list.find(f => f.v === cur.version) || fl.list[fl.list.length - 1];
   const genus = genusOf(cur.species);
   const parts = [displayName(cur.e) + '.'];
@@ -852,10 +858,6 @@ const FORMAT_CHOICES = ['ou', 'ubers', 'uu', 'ru', 'nu', 'pu', 'zu', 'lc', 'nfe'
 function settingsSheet() {
   const size = N ? +N.cacheSize() : 0;
   openSheet(`<h2>Settings</h2>
-    <h3>Game generation</h3>
-    <div class="gen-grid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => `<button type="button" class="gen-btn" data-gen="${g}" aria-pressed="${g === S.gen}"><b>Gen ${D.ROMAN[g]}</b><span>${D.GENS[g].region}</span></button>`).join('')}</div>
-    <p class="gen-games" id="genGames">${esc(D.GENS[S.gen].games)}</p>
-    <p class="note">Used on each Pokémon’s page: Pokédex entries, moves, types, abilities, stats and type matchups as they were in those games. The list always shows every Pokémon, and the Smogon tab has its own rules picker.</p>
     <h3>Voice</h3>
     <div class="field"><label for="rate">Speed <span id="rateV">${S.rate.toFixed(2)}×</span></label><input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="${S.rate}"></div>
     <div class="field"><label for="pitch">Pitch <span id="pitchV">${S.pitch.toFixed(2)}</span></label><input id="pitch" type="range" min="0.5" max="1.5" step="0.05" value="${S.pitch}"></div>
@@ -964,6 +966,7 @@ $('#settingsBtn2').addEventListener('click', settingsSheet);
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.id === 'vgSel') { cur.vg = t.value; renderPane(); }
+  if (t.id === 'verSel') { cur.version = t.value; stopSpeaking(); renderPane(); }
   if (t.id === 'autoRead') { S.autoRead = t.checked; save(); }
   if (t.id === 'fmtSel') { S.format = t.value; save(); if (cur) cur.fmt = null; }
   if (t.id === 'rulesSel') { S.smogonRules = t.value || null; save(); smogonRules = null; if (cur) cur.fmt = null; }
