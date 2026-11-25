@@ -90,8 +90,12 @@ async function loadIndex() {
     if (['CAP', 'Custom', 'Future'].includes(e.isNonstandard)) continue;
     const forme = e.forme || '';
     if (/Totem|Starter|Pokestar/.test(forme)) continue;
+    const bs = e.baseStats || {};
     out.push({id, name: e.name, num: e.num, base: e.baseSpecies || e.name, forme,
-      types: e.types || ['Normal'], gen: formeGen(e)});
+      types: e.types || ['Normal'], gen: formeGen(e), bs,
+      bst: ['hp', 'atk', 'def', 'spa', 'spd', 'spe'].reduce((t, k) => t + (bs[k] || 0), 0),
+      abilities: Object.values(e.abilities || {}), tags: e.tags || [], tier: e.tier || '',
+      evos: (e.evos || []).length > 0, prevo: !!e.prevo});
   }
   out.sort((a, b) => a.num - b.num || (a.forme ? 1 : 0) - (b.forme ? 1 : 0));
   INDEX = out;
@@ -113,38 +117,125 @@ async function loadIndex() {
 const tb = t => `<span class="tb${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t] || '#888'}">${esc(t)}</span>`;
 
 // ================================================================ HOME
-let query = '', typeFilter = null, limit = 60, homeScroll = 0;
-
+let query = '', limit = 60, homeScroll = 0;
+// Filters (this session). types: must have all (max 2); other groups: any of.
+const F0 = () => ({types: [], gens: [], cats: [], evo: '', tiers: [], ability: '', forms: 'all', sort: 'num'});
+let F = F0();
+const CATS = [['legendary', 'Legendary'], ['mythical', 'Mythical'], ['ultrabeast', 'Ultra Beast'], ['paradox', 'Paradox'],
+  ['mega', 'Mega & Primal'], ['regional', 'Regional forms'], ['gmax', 'Gigantamax']];
+const EVOS = [['', 'Any'], ['final', 'Fully evolved'], ['nfe', 'Can still evolve'], ['single', 'Doesn’t evolve']];
+const TIERS = [['Uber', 'Ubers'], ['OU', 'OU'], ['UUBL', 'UUBL'], ['UU', 'UU'], ['RUBL', 'RUBL'], ['RU', 'RU'], ['NUBL', 'NUBL'], ['NU', 'NU'],
+  ['PUBL', 'PUBL'], ['PU', 'PU'], ['ZUBL', 'ZUBL'], ['ZU', 'ZU'], ['LC', 'LC'], ['NFE', 'NFE'], ['AG', 'AG']];
+const SORTS = [['num', 'Number'], ['name', 'Name (A–Z)'], ['bst', 'Base stat total'], ['hp', 'HP'], ['atk', 'Attack'],
+  ['def', 'Defense'], ['spa', 'Sp. Atk'], ['spd', 'Sp. Def'], ['spe', 'Speed']];
+const STAT_SHORT = {bst: 'BST', hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe'};
+const REGIONAL = /^(Alola|Galar|Hisui|Paldea)/;
+function catOf(e, c) {
+  switch (c) {
+    case 'legendary': return e.tags.includes('Sub-Legendary') || e.tags.includes('Restricted Legendary');
+    case 'mythical': return e.tags.includes('Mythical');
+    case 'ultrabeast': return e.tags.includes('Ultra Beast');
+    case 'paradox': return e.tags.includes('Paradox');
+    case 'mega': return /^(Mega|Primal)/.test(e.forme);
+    case 'regional': return REGIONAL.test(e.forme);
+    case 'gmax': return e.forme === 'Gmax';
+  }
+  return false;
+}
+const tierKey = t => String(t || '').replace(/[()]/g, '');
+function filterCount() {
+  return F.types.length + F.gens.length + F.cats.length + (F.evo ? 1 : 0) + F.tiers.length + (F.ability.trim() ? 1 : 0) + (F.forms !== 'all' ? 1 : 0);
+}
+function passes(e) {
+  if (F.types.length && !F.types.every(t => e.types.includes(t))) return false;
+  if (F.gens.length && !F.gens.includes(e.gen)) return false;
+  if (F.cats.length && !F.cats.some(c => catOf(e, c))) return false;
+  if (F.forms === 'base' && e.forme) return false;
+  if (F.evo === 'final' && e.evos) return false;
+  if (F.evo === 'nfe' && !e.evos) return false;
+  if (F.evo === 'single' && (e.evos || e.prevo)) return false;
+  if (F.tiers.length && !F.tiers.includes(tierKey(e.tier))) return false;
+  const ab = norm(F.ability);
+  if (ab && !e.abilities.some(a => norm(a).includes(ab))) return false;
+  return true;
+}
 
 function filtered() {
   const raw = query.trim();
   const qNum = /^#?\d+$/.test(raw) ? parseInt(raw.replace('#', ''), 10) : null;
   const q = norm(raw);
-  return INDEX.filter(e => {
-    if (typeFilter && !e.types.includes(typeFilter)) return false;
+  const list = INDEX.filter(e => {
+    if (!passes(e)) return false;
     if (!raw) return true;
     if (qNum !== null) return e.num === qNum || String(e.num).startsWith(String(qNum));
     return norm(e.name).includes(q) || norm(displayName(e)).includes(q);
   });
+  if (F.sort === 'name') list.sort((a, b) => displayName(a).localeCompare(displayName(b)));
+  else if (F.sort === 'bst') list.sort((a, b) => b.bst - a.bst || a.num - b.num);
+  else if (F.sort !== 'num') list.sort((a, b) => (b.bs[F.sort] || 0) - (a.bs[F.sort] || 0) || a.num - b.num);
+  return list;
 }
 
 function renderTypeFilter() {
-  const types = D.TYPES;
-  $('#typeFilter').innerHTML = `<button type="button" class="chip" data-type="" aria-pressed="${!typeFilter}">All types</button>` +
-    types.map(t => `<button type="button" class="chip t${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}" data-type="${t}" aria-pressed="${typeFilter === t}">${t}</button>`).join('');
+  const n = filterCount();
+  $('#typeFilter').innerHTML = `<button type="button" class="chip filt" data-act="filters" aria-pressed="${n > 0}"><svg><use href="#i-filter"/></svg>Filters${n ? ` · ${n}` : ''}</button>` +
+    `<button type="button" class="chip" data-type="" aria-pressed="${!F.types.length}">All types</button>` +
+    D.TYPES.map(t => `<button type="button" class="chip t${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}" data-type="${t}" aria-pressed="${F.types.includes(t)}">${t}</button>`).join('');
+}
+function toggleType(t) {
+  if (!t) F.types = [];
+  else if (F.types.includes(t)) F.types = F.types.filter(x => x !== t);
+  else F.types = [...F.types, t].slice(-2);
 }
 
 function renderList(reset) {
   if (reset) limit = 60;
   const list = filtered();
-  $('#count').textContent = `${list.length.toLocaleString()} Pokémon`;
+  const n = filterCount();
+  const sortLabel = F.sort !== 'num' ? ' · sorted by ' + SORTS.find(x => x[0] === F.sort)[1].toLowerCase() : '';
+  $('#count').innerHTML = `${list.length.toLocaleString()} Pokémon${esc(sortLabel)}${n || F.sort !== 'num' ? ` · <button type="button" class="linkish" data-act="filters-reset">Clear</button>` : ''}`;
+  const stat = F.sort in STAT_SHORT ? F.sort : null;
   $('#list').innerHTML = list.slice(0, limit).map(e => `<li><button type="button" class="dex-row" data-id="${e.id}">
       ${imgTag(spriteOf(e), e.name)}
-      <span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(e.forme ? displayName(e) : e.name)}${e.forme ? `<small>${esc(formeLabel(e))}</small>` : ''}</span></span>
+      <span class="meta"><span class="num">${pad(e.num)}${stat ? ` · <b class="statv">${STAT_SHORT[stat]} ${stat === 'bst' ? e.bst : (e.bs[stat] || 0)}</b>` : ''}</span><span class="nm">${esc(e.forme ? displayName(e) : e.name)}${e.forme ? `<small>${esc(formeLabel(e))}</small>` : ''}</span></span>
       <span class="types">${e.types.map(tb).join('')}</span></button></li>`).join('');
   $('#homeMsg').innerHTML = list.length ? '' :
-    `<div class="msg"><b>No match</b>Nothing matches “${esc(query)}”. Try another name or number.</div>`;
+    `<div class="msg"><b>No match</b>${query.trim() ? `Nothing matches “${esc(query)}”${n ? ' with these filters' : ''}.` : 'No Pokémon match these filters.'}${n ? `<br><br><button type="button" class="btn" data-act="filters-reset">Clear filters</button>` : ''}</div>`;
   $('#more').dataset.left = Math.max(0, list.length - limit);
+}
+
+function filterSheet() {
+  const chip = (group, v, l, on) => `<button type="button" class="chip" data-f="${group}" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  const typeChip = t => `<button type="button" class="chip t${D.LIGHT_TYPES.has(t) ? ' light' : ''}" style="background:${D.TYPE_COLOR[t]}" data-f="types" data-v="${t}" aria-pressed="${F.types.includes(t)}">${t}</button>`;
+  openSheet(`<h2>Filters</h2>
+    <h3>Type <small class="note">pick up to 2</small></h3><div class="wrap">${D.TYPES.map(typeChip).join('')}</div>
+    <h3>Introduced in</h3><div class="wrap">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => chip('gens', g, `Gen ${D.ROMAN[g]} · ${D.GENS[g].region}`, F.gens.includes(g))).join('')}</div>
+    <h3>Category</h3><div class="wrap">${CATS.map(([v, l]) => chip('cats', v, l, F.cats.includes(v))).join('')}</div>
+    <h3>Forms</h3><div class="wrap">${chip('forms', 'all', 'Show all forms', F.forms === 'all')}${chip('forms', 'base', 'Base forms only', F.forms === 'base')}</div>
+    <h3>Evolution</h3><div class="wrap">${EVOS.map(([v, l]) => chip('evo', v, l, F.evo === v)).join('')}</div>
+    <h3>Smogon tier <small class="note">current Gen IX singles</small></h3><div class="wrap">${TIERS.map(([v, l]) => chip('tiers', v, l, F.tiers.includes(v))).join('')}</div>
+    <h3>Ability</h3><div class="field"><input id="fAbility" class="text-in" type="search" placeholder="e.g. Levitate, Intimidate" value="${esc(F.ability)}" autocomplete="off"></div>
+    <h3>Sort by</h3><div class="wrap">${SORTS.map(([v, l]) => chip('sort', v, l, F.sort === v)).join('')}</div>
+    <div class="sheet-actions"><button type="button" class="btn ghost" data-act="filters-reset">Reset</button>
+      <button type="button" class="btn red" data-act="close-sheet" id="fShow">Show ${filtered().length.toLocaleString()} Pokémon</button></div>`);
+}
+function onFilterChip(group, v) {
+  if (group === 'types') toggleType(v);
+  else if (group === 'gens') { const g = +v; F.gens = F.gens.includes(g) ? F.gens.filter(x => x !== g) : [...F.gens, g]; }
+  else if (group === 'cats' || group === 'tiers') F[group] = F[group].includes(v) ? F[group].filter(x => x !== v) : [...F[group], v];
+  else F[group] = v;
+  // refresh chip states + count without rebuilding the sheet (keeps scroll)
+  $$('#sheetBody [data-f]').forEach(b => {
+    const g = b.dataset.f, val = b.dataset.v;
+    const on = g === 'types' ? F.types.includes(val) : g === 'gens' ? F.gens.includes(+val) : (g === 'cats' || g === 'tiers') ? F[g].includes(val) : F[g] === val;
+    b.setAttribute('aria-pressed', on);
+  });
+  refreshAfterFilter();
+}
+function refreshAfterFilter() {
+  const btn = $('#fShow');
+  if (btn) btn.textContent = `Show ${filtered().length.toLocaleString()} Pokémon`;
+  renderTypeFilter(); renderList(true);
 }
 
 function renderHome() {
@@ -920,7 +1011,8 @@ document.addEventListener('click', ev => {
   if (d.go) { go(d.go, false); return; }
   if (d.pick) { closeSheet(); go(d.pick, true); return; }
   if (d.pickval !== undefined) { const cb = pickerCb; pickerCb = null; closeSheet(); if (cb) cb(d.pickval); return; }
-  if (d.type !== undefined && t.closest('#typeFilter')) { typeFilter = d.type || null; renderTypeFilter(); renderList(true); return; }
+  if (d.type !== undefined && t.closest('#typeFilter')) { toggleType(d.type); renderTypeFilter(); renderList(true); window.scrollTo(0, 0); return; }
+  if (d.f) { onFilterChip(d.f, d.v); return; }
   if (d.tab) {
     cur.tab = d.tab; renderPane();
     const hero = $('.hero');
@@ -955,6 +1047,8 @@ document.addEventListener('click', ev => {
     case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
     case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
     case 'lens': lensSheet(); break;
+    case 'filters': filterSheet(); break;
+    case 'filters-reset': F = F0(); if (!$('#sheet').hidden && $('#fShow')) filterSheet(); renderTypeFilter(); renderList(true); break;
     case 'pick-ver': {
       const fl = flavorFor(cur.species);
       openPicker('Pokédex entry from', genGroups(fl.list, f => f.g, f => [f.v, verLabel(f.v)]), cur.version, v => { cur.version = v; stopSpeaking(); renderPane(); });
@@ -999,6 +1093,7 @@ document.addEventListener('change', ev => {
 document.addEventListener('input', ev => {
   const t = ev.target;
   if (t.id === 'q') { query = t.value; renderList(true); window.scrollTo(0, 0); }
+  if (t.id === 'fAbility') { F.ability = t.value; refreshAfterFilter(); }
   if (t.id === 'rate') { S.rate = +t.value; $('#rateV').textContent = S.rate.toFixed(2) + '×'; save(); }
   if (t.id === 'pitch') { S.pitch = +t.value; $('#pitchV').textContent = S.pitch.toFixed(2); save(); }
 });

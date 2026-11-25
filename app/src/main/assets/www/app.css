@@ -219,3 +219,14 @@ select{font:600 16px var(--body);min-height:44px;border-radius:10px;border:2px s
 .pick-opt{width:100%;min-height:48px;border:2px solid transparent;border-radius:12px;background:var(--card);box-shadow:0 1px 0 var(--line);text-align:left;padding:0 14px;font:600 16px var(--body)}
 .pick-opt[aria-pressed=true]{border-color:var(--shell);background:#fff5f5}
 .pick-opt[aria-pressed=true]::after{content:"  ✓";color:var(--shell)}
+.wrap{display:flex;flex-wrap:wrap;gap:8px}
+.sheet h3 small.note{font-weight:500;margin-left:6px}
+.chip.filt{background:var(--bezel);color:#fff}
+.chip.filt[aria-pressed=true]{background:var(--shell);border-color:var(--shell)}
+.text-in{width:100%;height:48px;border-radius:10px;border:2px solid var(--line);padding:0 12px;font:500 16px var(--body);background:#fff;color:var(--ink)}
+.text-in:focus{outline:none;border-color:var(--lens)}
+.sheet-actions{position:sticky;bottom:-28px;display:flex;gap:10px;margin:18px -16px -28px;padding:12px 16px 20px;background:var(--screen);box-shadow:0 -1px 0 var(--line)}
+.sheet-actions .btn{flex:1}
+.statv{color:var(--shell-d);font-weight:700}
+.count .linkish{font-size:13px}
+.chip.filt{display:inline-flex;align-items:center;gap:6px}.chip.filt svg{width:16px;height:16px}
