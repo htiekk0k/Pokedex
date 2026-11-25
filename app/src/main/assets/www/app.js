@@ -734,8 +734,18 @@ function setMoveRow(name) {
     <span class="smove-top"><b>${esc(name)}</b>${m.type ? tb(m.type) : ''}${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}${pri}</span>
     ${stats ? `<span class="smove-stats">${stats}</span>` : ''}<span class="smove-desc" hidden></span></button>`;
 }
+// Sets: one numbered box per move slot; alternatives inside it separated by OR.
 function setMovesHTML(moves) {
-  return `<ol class="set-moves">${(moves || []).map(m => `<li>${(Array.isArray(m) ? m : [m]).map(setMoveRow).join('<span class="or">or</span>')}</li>`).join('')}</ol>`;
+  return `<ol class="set-moves">${(moves || []).map((m, i) => {
+    const opts = Array.isArray(m) ? m : [m];
+    const head = opts.length > 1 ? `Move ${i + 1} · pick 1 of ${opts.length}` : `Move ${i + 1}`;
+    return `<li class="slot${opts.length > 1 ? ' multi' : ''}"><span class="slot-h"><span class="slot-n">${i + 1}</span>${head}</span>
+      ${opts.map(setMoveRow).join('<span class="or">or</span>')}</li>`;
+  }).join('')}</ol>`;
+}
+// Random Battle: a pool to choose from, not fixed slots.
+function poolMovesHTML(moves) {
+  return `<div class="move-pool">${(moves || []).map(setMoveRow).join('')}</div>`;
 }
 async function toggleSetMove(btn) {
   const d = btn.querySelector('.smove-desc');
@@ -752,7 +762,7 @@ function randbatsCard(r) {
       ${x.abilities ? `<div><b>Ability</b>${esc(list(x.abilities))}</div>` : ''}
       ${x.items ? `<div><b>Item</b>${esc(list(x.items))}</div>` : ''}
       ${x.teraTypes ? `<div><b>Tera</b>${esc(list(x.teraTypes))}</div>` : ''}
-    </div><h4 style="margin-top:12px;font-size:14px">Possible moves</h4>${setMovesHTML(x.moves)}</section>`;
+    </div><h4 style="margin-top:12px;font-size:14px">Move pool <small class="note">4 are picked at random</small></h4>${poolMovesHTML(x.moves)}</section>`;
   if (r.roles) return Object.entries(r.roles).map(([n, x]) => block(n, x)).join('');
   return block('Random set', r);
 }
