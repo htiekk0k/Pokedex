@@ -212,3 +212,10 @@ select{font:600 16px var(--body);min-height:44px;border-radius:10px;border:2px s
   .pane{max-width:760px;margin:0 auto}
   .hero>*{max-width:760px;margin-left:auto;margin-right:auto}
 }
+.field-label{font-weight:600;font-size:14px}
+.select-btn{width:100%;min-height:48px;border:2px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);padding:0 14px;font:600 16px var(--body);display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left}
+.select-btn span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.select-btn:active{background:#f3f4f6}
+.pick-opt{width:100%;min-height:48px;border:2px solid transparent;border-radius:12px;background:var(--card);box-shadow:0 1px 0 var(--line);text-align:left;padding:0 14px;font:600 16px var(--body)}
+.pick-opt[aria-pressed=true]{border-color:var(--shell);background:#fff5f5}
+.pick-opt[aria-pressed=true]::after{content:"  ✓";color:var(--shell)}

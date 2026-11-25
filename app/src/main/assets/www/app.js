@@ -328,7 +328,7 @@ function paneEntry(pane) {
   pane.innerHTML = `
     <section class="card">
       <h3>Pokédex entry</h3>
-      ${fl.list.length > 1 ? `<div class="field"><label for="verSel">Game</label><select id="verSel">${byGen(fl.list, f => f.g, f => `<option value="${f.v}" ${f.v === cur.version ? 'selected' : ''}>${esc(verLabel(f.v))}</option>`)}</select></div>` : ''}
+      ${fl.list.length > 1 ? pickBtn('pick-ver', 'Game', verLabel(cur.version)) : ''}
       <p class="entry-text">${shown ? esc(shown.text) : 'No English Pokédex entry for this Pokémon yet.'}</p>
       ${shown && fl.list.length === 1 ? `<p class="note">${esc(verLabel(shown.v))}</p>` : ''}
       ${fl.note ? `<p class="note">${esc(fl.note)}</p>` : ''}
@@ -412,6 +412,19 @@ function byGen(items, genOf, render) {
   const gens = [...new Set(items.map(genOf))].sort((a, b) => b - a);
   return gens.map(g => `<optgroup label="Gen ${D.ROMAN[g] || g}">${items.filter(x => genOf(x) === g).slice().reverse().map(render).join('')}</optgroup>`).join('');
 }
+// In-app picker (Android's native dropdown handles grouped lists poorly).
+let pickerCb = null;
+const pickBtn = (act, label, text) => `<div class="field"><span class="field-label">${label}</span><button type="button" class="select-btn" data-act="${act}"><span>${esc(text)}</span><span aria-hidden="true">▾</span></button></div>`;
+function openPicker(heading, groups, selected, onPick) {
+  pickerCb = onPick;
+  openSheet(`<h2>${esc(heading)}</h2>${groups.filter(g => g.items.length).map(g => `<h3>${esc(g.label)}</h3>
+    <div class="pick-list">${g.items.map(([v, l]) => `<button type="button" class="pick-opt" data-pickval="${esc(v)}" aria-pressed="${v === selected}">${esc(l)}</button>`).join('')}</div>`).join('')}`);
+  const sel = $('#sheetBody .pick-opt[aria-pressed=true]');
+  if (sel) sel.scrollIntoView({block: 'center'});
+}
+const genGroups = (items, genOf, label) => [...new Set(items.map(genOf))].sort((a, b) => b - a)
+  .map(g => ({label: 'Gen ' + (D.ROMAN[g] || g), items: items.filter(x => genOf(x) === g).slice().reverse().map(label)}));
+
 function vgsIn(p) {
   const s = new Set();
   for (const m of p.moves || []) for (const d of m.version_group_details) s.add(d.version_group.name);
@@ -458,10 +471,11 @@ async function paneMoves(pane) {
       <table class="mtable"><thead><tr>${showLv ? '<th>Lv</th>' : ''}<th>Move</th><th>Type</th><th>Cat</th><th class="r">Pwr</th><th class="r">Acc</th></tr></thead>
       <tbody>${list.map(r => moveRow(movedb, r, showLv, mgen)).join('')}</tbody></table></section>`;
   }).join('');
-  pane.innerHTML = `<section class="card"><div class="selrow"><label for="vgSel"><b>Game</b></label>
-      <select id="vgSel">${byGen(vgs, vgGen, v => `<option value="${v}" ${v === cur.vg ? 'selected' : ''}>${esc(D.VG_LABEL[v] || title(v))}</option>`)}</select></div>
+  cur.vgs = vgs;
+  pane.innerHTML = `<section class="card">${pickBtn('pick-vg', 'Game', vgLabel(cur.vg))}
       ${note ? `<p class="note">${esc(note)}</p>` : ''}<p class="note">Tap a move for its effect. Power and accuracy are from the latest games.</p></section>${sections}`;
 }
+const vgLabel = v => D.VG_LABEL[v] || title(v);
 function moveName(db, slug) { const m = db[slug.replace(/-/g, '')]; return m ? m.name : title(slug); }
 function moveInfo(db, slug, gen) {
   const id = slug.replace(/-/g, '');
@@ -571,12 +585,10 @@ async function paneSmogon(pane) {
   const fmt = cur.fmt = pickFormat(withSets, all);
   const isDefault = S.format === fmt && rules === defaultRules(e);
   cur.rules = rules;
-  const opt = f => `<option value="${f}" ${f === fmt ? 'selected' : ''}>${esc(D.tierLabel(f))}</option>`;
   const others = all.filter(f => !withSets.includes(f));
+  cur.fmtGroups = [{label: 'Sets for ' + e.name, items: withSets.map(f => [f, D.tierLabel(f)])}, {label: 'Other formats', items: others.map(f => [f, D.tierLabel(f)])}];
   const head = `<section class="card"><h3>Rules <small>${esc(rulesLabel)}</small></h3>${ruleChips}
-      <div class="field"><label for="fmtPick">Battle format</label>
-      <select id="fmtPick">${withSets.length ? `<optgroup label="Sets for ${esc(e.name)}">${withSets.map(opt).join('')}</optgroup>` : ''}
-        ${others.length ? `<optgroup label="Other formats">${others.map(opt).join('')}</optgroup>` : ''}</select></div>
+      ${pickBtn('pick-fmt', 'Battle format', D.tierLabel(fmt))}
       <div class="set-actions"><button type="button" class="btn ${isDefault ? 'ghost' : 'red'}" data-act="fmt-default" ${isDefault ? 'disabled' : ''}>${isDefault ? '★ This is your default' : '☆ Make this my default'}</button></div>
       <p class="note">Sets written by Smogon University contributors (via data.pkmn.cc).</p></section>`;
 
@@ -907,6 +919,7 @@ document.addEventListener('click', ev => {
   if (d.id) { go(d.id, false); return; }
   if (d.go) { go(d.go, false); return; }
   if (d.pick) { closeSheet(); go(d.pick, true); return; }
+  if (d.pickval !== undefined) { const cb = pickerCb; pickerCb = null; closeSheet(); if (cb) cb(d.pickval); return; }
   if (d.type !== undefined && t.closest('#typeFilter')) { typeFilter = d.type || null; renderTypeFilter(); renderList(true); return; }
   if (d.tab) {
     cur.tab = d.tab; renderPane();
@@ -942,6 +955,17 @@ document.addEventListener('click', ev => {
     case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
     case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
     case 'lens': lensSheet(); break;
+    case 'pick-ver': {
+      const fl = flavorFor(cur.species);
+      openPicker('Pokédex entry from', genGroups(fl.list, f => f.g, f => [f.v, verLabel(f.v)]), cur.version, v => { cur.version = v; stopSpeaking(); renderPane(); });
+      break;
+    }
+    case 'pick-vg':
+      openPicker('Moves in', genGroups(cur.vgs || [], vgGen, v => [v, vgLabel(v)]), cur.vg, v => { cur.vg = v; renderPane(); });
+      break;
+    case 'pick-fmt':
+      openPicker('Battle format', cur.fmtGroups || [], cur.fmt, v => { cur.fmt = v; renderPane(); });
+      break;
     case 'fmt-default':
       if (cur && cur.fmt) {
         S.format = cur.fmt;

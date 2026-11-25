@@ -100,7 +100,7 @@ window.DEXDATA = (() => {
     ['sword-shield',8,'Sword / Shield'], ['the-isle-of-armor',8,'Isle of Armor'], ['the-crown-tundra',8,'Crown Tundra'],
     ['brilliant-diamond-shining-pearl',8,'Brilliant Diamond / Shining Pearl'], ['legends-arceus',8,'Legends: Arceus'],
     ['scarlet-violet',9,'Scarlet / Violet'], ['the-teal-mask',9,'The Teal Mask'], ['the-indigo-disk',9,'The Indigo Disk'],
-    ['legends-za',9,'Legends: Z-A'], ['mega-dimension',9,'Mega Dimension']
+    ['legends-za',9,'Legends: Z-A'], ['mega-dimension',9,'Mega Dimension'], ['champions',9,'Pokémon Champions']
   ];
   const VG_GEN = Object.fromEntries(VG.map(v => [v[0], v[1]]));
   const VG_LABEL = Object.fromEntries(VG.map(v => [v[0], v[2]]));
@@ -115,14 +115,14 @@ window.DEXDATA = (() => {
     x:6, y:6, 'omega-ruby':6, 'alpha-sapphire':6,
     sun:7, moon:7, 'ultra-sun':7, 'ultra-moon':7, 'lets-go-pikachu':7, 'lets-go-eevee':7,
     sword:8, shield:8, 'brilliant-diamond':8, 'shining-pearl':8, 'legends-arceus':8,
-    scarlet:9, violet:9, 'legends-za':9
+    scarlet:9, violet:9, 'legends-za':9, champions:9
   };
   const VERSION_LABEL = {
     'red-japan':'Red (JP)', 'green-japan':'Green (JP)', 'blue-japan':'Blue (JP)', firered:'FireRed', leafgreen:'LeafGreen',
     heartgold:'HeartGold', soulsilver:'SoulSilver', 'black-2':'Black 2', 'white-2':'White 2', x:'X', y:'Y',
     'omega-ruby':'Omega Ruby', 'alpha-sapphire':'Alpha Sapphire', 'ultra-sun':'Ultra Sun', 'ultra-moon':'Ultra Moon',
     'lets-go-pikachu':"Let's Go Pikachu", 'lets-go-eevee':"Let's Go Eevee", 'brilliant-diamond':'Brilliant Diamond',
-    'shining-pearl':'Shining Pearl', 'legends-arceus':'Legends: Arceus', 'legends-za':'Legends: Z-A', xd:'XD'
+    'shining-pearl':'Shining Pearl', 'legends-arceus':'Legends: Arceus', 'legends-za':'Legends: Z-A', champions:'Pokémon Champions', xd:'XD'
   };
 
   // Before the physical/special split (Gen 4), the move's type decided its category.
