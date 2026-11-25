@@ -585,6 +585,9 @@ async function paneMoves(pane) {
       ${note ? `<p class="note">${esc(note)}</p>` : ''}<p class="note">Tap a move for its effect. Power and accuracy are from the latest games.</p></section>${sections}`;
 }
 const vgLabel = v => D.VG_LABEL[v] || title(v);
+// Move category icons (drawn in index.html): starburst = physical, rings = special, swirl = status
+const CAT_ICON = {Physical: 'i-phys', Special: 'i-spec', Status: 'i-stat'};
+const catIcon = c => CAT_ICON[c] ? `<svg class="caticon" role="img" aria-label="${c}"><title>${c}</title><use href="#${CAT_ICON[c]}"/></svg>` : '';
 function moveName(db, slug) { const m = db[slug.replace(/-/g, '')]; return m ? m.name : title(slug); }
 function moveInfo(db, slug, gen) {
   const id = slug.replace(/-/g, '');
@@ -601,7 +604,7 @@ function moveRow(db, r, showLv, gen) {
   const m = moveInfo(db, r.name, gen);
   return `<tr class="mrow" data-move="${r.name}">${showLv ? `<td class="lv">${r.level || 'Evo'}</td>` : ''}
     <td class="mv">${esc(m.name)}</td><td>${m.type ? tb(m.type) : ''}</td>
-    <td>${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}</td>
+    <td>${catIcon(m.cat)}</td>
     <td class="r">${m.bp}</td><td class="r">${m.acc}</td></tr>`;
 }
 async function moveEffect(slug) {
@@ -731,7 +734,7 @@ function setMoveRow(name) {
   const pri = m.pri ? `<span class="pri ${m.pri > 0 ? 'up' : 'down'}">Priority ${m.pri > 0 ? '+' : ''}${m.pri}</span>` : '';
   const stats = known ? [m.cat === 'Status' ? 'Status' : m.cat + ' · Power ' + m.bp, 'Accuracy ' + (m.acc === '—' ? '—' : m.acc + '%'), 'PP ' + (m.pp ?? '—')].join(' · ') : '';
   return `<button type="button" class="smove" data-smove="${esc(moveApiSlug(name))}">
-    <span class="smove-top"><b>${esc(name)}</b>${m.type ? tb(m.type) : ''}${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}${pri}</span>
+    <span class="smove-top"><b>${esc(name)}</b>${m.type ? tb(m.type) : ''}${catIcon(m.cat)}${pri}</span>
     ${stats ? `<span class="smove-stats">${stats}</span>` : ''}<span class="smove-desc" hidden></span></button>`;
 }
 // Sets: one numbered box per move slot; alternatives inside it separated by OR.

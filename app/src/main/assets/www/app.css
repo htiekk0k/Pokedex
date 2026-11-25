@@ -250,3 +250,5 @@ select{font:600 16px var(--body);min-height:44px;border-radius:10px;border:2px s
 .upd-banner span{margin-left:auto;font-weight:700;background:#3a2c00;color:var(--led-y);border-radius:8px;padding:6px 12px}
 .upd-track{height:14px;border-radius:7px;background:#dfe3e6;overflow:hidden;margin:8px 0}
 .upd-fill{height:100%;background:var(--shell);border-radius:7px;transition:width .2s}
+.caticon{width:26px;height:26px;vertical-align:middle;flex:none}
+.smove-top .caticon{width:24px;height:24px}
