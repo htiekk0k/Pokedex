@@ -108,7 +108,7 @@ flowchart LR
 | | |
 |---|---|
 | Actor | User; data sources |
-| Main flow | 1. App shows the header immediately from the index. 2. App fetches species + variety data (cache first). 3. App renders artwork, types, category, forms and the Entry tab. 4. User switches tabs (Stats, Moves, Smogon, Evolution) or forms. |
+| Main flow | 1. App shows the header immediately from the index. 2. App fetches species + variety data (cache first). 3. App renders artwork, types, category, forms and the Entry tab. 4. User switches tabs (Moves, Smogon, Evolution) or forms. Base stats are part of the Entry tab. |
 | Alternatives | 2a. Offline and not cached → error card with *Try again*. |
 | Requirements | FR-7, FR-8, FR-10, FR-13 |
 

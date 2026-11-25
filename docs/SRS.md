@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| Version | 1.1 (matches app build 13) |
+| Version | 1.2 (matches app build 14) |
 | Date | 26 November 2026 |
 | Owner | htiekk0k |
 | Status | Baseline: describes the implemented system |
@@ -110,7 +110,7 @@ See also the [component diagram](diagrams/component-diagram.md).
 3. Find a Pokémon by voice.
 4. Identify a Pokémon from a photo with Google Lens and return to its entry.
 5. Look up a Pokémon from text or a screenshot shared or selected in another app.
-6. Show a Pokémon page with five tabs: Entry, Stats, Moves, Smogon, Evolution.
+6. Show a Pokémon page with four tabs: Entry (including base stats), Moves, Smogon, Evolution.
 7. Read the Pokédex entry aloud.
 8. Show Smogon sets for any rules (Gen I–IX, Champions) and format, and remember a default.
 9. Work offline for anything viewed before.
@@ -152,7 +152,7 @@ The app has a single local user; there are no roles or permissions.
 
 ### 3.1 User interfaces
 - **UI-1** Home screen: red Pokédex shell header with lens graphic, title and settings cog; search field; *Say a name* and *Lens* buttons; filter/type chip row; result count; scrollable list (artwork thumbnail, number, name, form label, type badges).
-- **UI-2** Pokémon page: back button, title, settings cog; artwork "screen"; name, category, types; *Read entry aloud* button with a blinking light while speaking; form chips; tabs Entry · Stats · Moves · Smogon · Evolution.
+- **UI-2** Pokémon page: back button, title, settings cog; artwork "screen"; name, category, types; *Read entry aloud* button with a blinking light while speaking; form chips; tabs Entry · Moves · Smogon · Evolution.
 - **UI-3** Bottom sheets for Settings, Filters, Lens, pickers (game, format) and lookup results.
 - **UI-4** Every touch target is at least 44 × 44 dp; text inputs use 16 px or larger; the layout adapts from 360 dp phones to tablets.
 
@@ -270,7 +270,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-8.1 | A *Game* picker shall list every game with an English entry, grouped by generation, newest first; the default shall be the newest game. | H |
 | FR-8.2 | The tab shall show Pokédex data (number, type, category, height in m and ft/in, weight in kg and lbs, abilities with hidden ability marked); tapping an ability shall show its effect. | H |
 | FR-8.3 | The tab shall show training data (EV yield, catch rate with full-HP Poké Ball chance, base friendship, base experience, growth rate) and breeding data (egg groups, gender ratio, egg cycles). | H |
-| FR-8.4 | The tab shall show a type-defence grid (0, ¼, ½, 1, 2, 4). | H |
+| FR-8.4 | The tab shall show base stats (FR-10.1) followed by a type-defence grid (0, ¼, ½, 1, 2, 4). | H |
 
 ### 4.9 Read aloud (UC-07)
 | ID | Requirement | Pri |
@@ -280,10 +280,10 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-9.3 | Speed (0.5–1.5×) and pitch (0.5–1.5) shall be adjustable, with *Test voice*. Defaults: 0.95 and 0.85. | M |
 | FR-9.4 | When a Pokémon is opened from voice, Lens or a share, the entry shall be read automatically if the setting is on (default on). | M |
 
-### 4.10 Stats tab (UC-06)
+### 4.10 Base stats (Entry tab, UC-06)
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-10.1 | The tab shall show the six base stats as coloured bars, the total, and level-100 min–max (hindering nature, 0 EV/IV, to helpful nature, 252 EV, 31 IV). | H |
+| FR-10.1 | The Entry tab shall show the six base stats as coloured bars, the total, and level-100 min–max (hindering nature, 0 EV/IV, to helpful nature, 252 EV, 31 IV). | H |
 
 ### 4.11 Moves tab (UC-08)
 | ID | Requirement | Pri |

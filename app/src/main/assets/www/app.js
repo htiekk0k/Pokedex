@@ -396,7 +396,7 @@ function heroHTML() {
   </section>`;
 }
 
-const TABS = [['entry', 'Entry'], ['stats', 'Stats'], ['moves', 'Moves'], ['smogon', 'Smogon'], ['evo', 'Evolution']];
+const TABS = [['entry', 'Entry'], ['moves', 'Moves'], ['smogon', 'Smogon'], ['evo', 'Evolution']];
 function renderDetail() {
   $('#detailBody').innerHTML = heroHTML() +
     `<nav class="tabs scroll" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${cur.tab === k}">${l}</button>`).join('')}</nav>
@@ -407,7 +407,10 @@ function renderPane() {
   const pane = $('#pane');
   if (!pane) return;
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === cur.tab));
-  ({entry: paneEntry, stats: paneStats, moves: paneMoves, smogon: paneSmogon, evo: paneEvo})[cur.tab](pane);
+  const panes = {entry: paneEntry, moves: paneMoves, smogon: paneSmogon, evo: paneEvo};
+  if (!panes[cur.tab]) cur.tab = 'entry';
+  $$('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === cur.tab));
+  panes[cur.tab](pane);
 }
 
 // ------------------------------------------------------------ Entry tab
@@ -461,6 +464,7 @@ function paneEntry(pane) {
       <tr><th>Gender</th><td>${gender}</td></tr>
       <tr><th>Egg cycles</th><td>${sp.hatch_counter ?? '—'}</td></tr>
     </tbody></table></section>` : ''}
+    ${statsCardHTML(p)}
     <section class="card"><h3>Type defenses</h3>${defensesHTML(types, gen)}</section>`;
 }
 
@@ -488,8 +492,8 @@ async function showAbility(name) {
 
 // ------------------------------------------------------------ Stats tab
 function statColor(v) { return v < 30 ? '#f34444' : v < 60 ? '#ff7f0f' : v < 90 ? '#ffc93c' : v < 120 ? '#a0e515' : v < 150 ? '#23cd5e' : '#00c2b8'; }
-function paneStats(pane) {
-  const st = statsAt(cur.pokemon, S.gen);
+function statsCardHTML(p) {
+  const st = statsAt(p, S.gen);
   let total = 0;
   const rows = D.STAT_KEYS.map(k => {
     const b = st[k] ? st[k].base : 0;
@@ -501,13 +505,10 @@ function paneStats(pane) {
       <span class="bar-bg"><span class="bar-fg" style="display:block;width:${Math.min(100, b / 255 * 100).toFixed(1)}%;background:${statColor(b)}"></span></span>
       <span class="mm">${min}–${max}</span></div>`;
   }).join('');
-  pane.innerHTML = `<section class="card"><h3>Base stats</h3>${rows}
+  return `<section class="card"><h3>Base stats</h3>${rows}
       <div class="stat total"><span class="k">Total</span><span class="v">${total}</span><span></span><span class="mm">Min–Max</span></div>
       <p class="note">Min–Max are level 100 stats: hindering nature with 0 EVs and 0 IVs, up to a helpful nature with 252 EVs and 31 IVs.</p>
-      ${S.gen === 1 ? '<p class="note">In Gen 1, Sp. Atk and Sp. Def were one “Special” stat. Both are shown as they are today.</p>' : ''}
-      ${S.gen <= 2 ? '<p class="note">Gen 1–2 games used DVs and stat experience instead of IVs and EVs, so in-game stats differ slightly.</p>' : ''}
-    </section>
-    <section class="card"><h3>Type defenses</h3>${defensesHTML(typesAt(cur.pokemon, S.gen), S.gen)}</section>`;
+    </section>`;
 }
 
 // ------------------------------------------------------------ Moves tab

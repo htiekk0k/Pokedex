@@ -31,8 +31,7 @@ stateDiagram-v2
 
   state PokemonPage {
     [*] --> Entry
-    Entry --> Stats
-    Stats --> Moves
+    Entry --> Moves
     Moves --> Smogon
     Smogon --> Evolution
   }
