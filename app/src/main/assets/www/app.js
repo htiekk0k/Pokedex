@@ -782,16 +782,57 @@ function setCard(setName, s, i) {
     <div class="set-actions"><button type="button" class="btn" data-copyset="${i}"><svg><use href="#i-copy"/></svg>Copy for Showdown</button></div>
   </section>`;
 }
-function showdownExport(s) {
-  const out = [cur.e.name + (s.item ? ' @ ' + first(s.item) : '')];
-  if (s.ability) out.push('Ability: ' + first(s.ability));
+// Export: every field that has alternatives (slash options) becomes a choice.
+const asList = v => v === undefined || v === null ? [] : Array.isArray(v) ? v : [v];
+function exportFields(s) {
+  const f = [];
+  const add = (key, label, opts, show = x => String(x)) => { if (opts.length) f.push({key, label, opts, show}); };
+  add('item', 'Item', asList(s.item));
+  add('ability', 'Ability', asList(s.ability));
+  add('teratypes', 'Tera Type', asList(s.teratypes));
+  add('evs', 'EVs', asList(s.evs), spread);
+  add('nature', 'Nature', asList(s.nature));
+  add('ivs', 'IVs', asList(s.ivs), spread);
+  (s.moves || []).forEach((m, i) => add('m' + i, 'Move ' + (i + 1), asList(m)));
+  return f;
+}
+function showdownExport(s, picks = {}) {
+  const fields = exportFields(s);
+  const val = key => { const fl = fields.find(x => x.key === key); return fl ? fl.opts[picks[key] || 0] : undefined; };
+  const out = [cur.e.name + (val('item') ? ' @ ' + val('item') : '')];
+  if (val('ability')) out.push('Ability: ' + val('ability'));
   if (s.level) out.push('Level: ' + first(s.level));
-  if (s.teratypes) out.push('Tera Type: ' + first(s.teratypes));
-  if (s.evs) out.push('EVs: ' + spread(first(s.evs)));
-  if (s.nature) out.push(first(s.nature) + ' Nature');
-  if (s.ivs) out.push('IVs: ' + spread(first(s.ivs)));
-  for (const m of s.moves || []) out.push('- ' + first(m));
+  if (val('teratypes')) out.push('Tera Type: ' + val('teratypes'));
+  if (val('evs')) out.push('EVs: ' + spread(val('evs')));
+  if (val('nature')) out.push(val('nature') + ' Nature');
+  if (val('ivs')) out.push('IVs: ' + spread(val('ivs')));
+  (s.moves || []).forEach((m, i) => out.push('- ' + val('m' + i)));
   return out.join('\n');
+}
+let exportState = null; // {set, picks}
+function openExport(setIdx) {
+  const entry = Object.entries(cur.sets || {})[setIdx];
+  if (!entry) return;
+  const [setName, s] = entry;
+  const choices = exportFields(s).filter(f => f.opts.length > 1);
+  if (!choices.length) { copyText(showdownExport(s)); if (N) N.toast('Copied for Showdown'); return; }
+  exportState = {set: s, picks: {}};
+  openSheet(`<h2>Copy for Showdown</h2><p class="note">${esc(setName)} has options. Pick one for each, then copy.</p>
+    ${choices.map(f => `<h3>${esc(f.label)}</h3><div class="wrap">${f.opts.map((o, i) =>
+      `<button type="button" class="chip" data-xk="${f.key}" data-xi="${i}" aria-pressed="${i === 0}">${esc(f.show(o))}</button>`).join('')}</div>`).join('')}
+    <h3>Preview</h3><pre class="ocr-text export-prev" id="xPrev"></pre><p class="note" id="xWarn"></p>
+    <div class="sheet-actions"><button type="button" class="btn ghost" data-act="close-sheet">Cancel</button>
+      <button type="button" class="btn red" data-act="export-copy"><svg><use href="#i-copy"/></svg>Copy</button></div>`);
+  refreshExport();
+}
+function refreshExport() {
+  if (!exportState) return;
+  const {set, picks} = exportState;
+  $('#xPrev').textContent = showdownExport(set, picks);
+  const moves = (set.moves || []).map((m, i) => asList(m)[picks['m' + i] || 0]);
+  const dup = moves.find((m, i) => moves.indexOf(m) !== i);
+  $('#xWarn').textContent = dup ? `${dup} is picked twice. Showdown only allows each move once.` : '';
+  $$('#sheetBody [data-xk]').forEach(b => b.setAttribute('aria-pressed', (picks[b.dataset.xk] || 0) === +b.dataset.xi));
 }
 function copyText(t) {
   if (N) N.copy(t);
@@ -1134,12 +1175,8 @@ document.addEventListener('click', ev => {
   if (d.srules) { smogonRules = d.srules; cur.fmt = null; renderPane(); return; }
   if (d.ability) { showAbility(d.ability); return; }
   if (d.url) { if (N) N.openUrl(d.url); else window.open(d.url, '_blank'); return; }
-  if (d.copyset !== undefined && cur && cur.sets) {
-    const entry = Object.entries(cur.sets)[+d.copyset];
-    if (entry) copyText(showdownExport(entry[1]));
-    t.lastChild.textContent = 'Copied';
-    return;
-  }
+  if (d.copyset !== undefined && cur && cur.sets) { openExport(+d.copyset); return; }
+  if (d.xk && exportState) { exportState.picks[d.xk] = +d.xi; refreshExport(); return; }
   if (d.gen) {
     S.gen = +d.gen; save(); smogonRules = null;
     $$('.gen-btn').forEach(b => b.setAttribute('aria-pressed', +b.dataset.gen === S.gen));
@@ -1157,6 +1194,7 @@ document.addEventListener('click', ev => {
     case 'camera': if (N) N.scan('camera'); else alertSheet('Card scanning works in the Android app.'); break;
     case 'gallery': if (N) N.scan('gallery'); else alertSheet('Reading pictures works in the Android app.'); break;
     case 'lens': lensSheet(); break;
+    case 'export-copy': if (exportState) { copyText(showdownExport(exportState.set, exportState.picks)); if (N) N.toast('Copied for Showdown'); else t.lastChild.textContent = 'Copied'; closeSheet(); exportState = null; } break;
     case 'update-check': checkForUpdates(false); break;
     case 'update-show': if (updateInfo) updateSheet(updateInfo); break;
     case 'update-go': if (N && updateInfo && updateInfo.url) { progressSheet(0, 0, updateInfo.size || 0); N.downloadUpdate(updateInfo.url); } break;

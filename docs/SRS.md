@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| Version | 1.4 (matches app build 16) |
+| Version | 1.5 (matches app build 19) |
 | Date | 26 November 2026 |
 | Owner | htiekk0k |
 | Status | Baseline: describes the implemented system |
@@ -301,7 +301,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-12.2 | A *Battle format* picker shall list every format with set data for the chosen rules (from the index), split into "Sets for {Pokémon}" and "Other formats", plus Random Battle (Gen I–IX) and Random Doubles (Gen VIII–IX). | H |
 | FR-12.3 | Each set shall show item, ability, nature, Tera type, EVs, IVs, level and moves; slash options shall be kept. | H |
 | FR-12.3a | Each move in a set (and in Random Battle move pools) shall show its type, category, power, accuracy, PP and, when non-zero, a priority badge (e.g. *Priority +1*); tapping it shall show the move's effect. Each of the four move slots shall be its own box; a slot with slash options shall show each option separated by a clear OR divider line. Random Battle shows a move pool instead of slots. | H |
-| FR-12.4 | *Copy for Showdown* shall copy the set in Showdown import format, using the first option of each slash choice. | M |
+| FR-12.4 | *Copy for Showdown* shall copy the set in Showdown import format. If the set has alternatives (item, ability, Tera type, EVs, nature, IVs or any move slot), a panel shall let the user pick one per field (first option preselected), show a live preview, warn when the same move is picked twice, and copy the chosen build. Sets without alternatives copy immediately. | M |
 | FR-12.5 | *Make this my default* shall store the rules and format; Settings shall also allow choosing default rules ("Latest generation (Gen IX)" or a specific one) and a default format. | H |
 | FR-12.6 | If the chosen format has no sets for the Pokémon, the tab shall say so and list the formats that do. | M |
 | FR-12.7 | *Open on Smogon* shall open the Pokémon's Smogon dex page for the chosen rules. | L |

@@ -593,7 +593,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("Pokédex", text));
-                if (Build.VERSION.SDK_INT < 33) toast("Copied");
+                // The UI shows its own "Copied" message.
             });
         }
 

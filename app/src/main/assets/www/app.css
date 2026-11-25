@@ -249,3 +249,6 @@ select{font:600 16px var(--body);min-height:44px;border-radius:10px;border:2px s
 .upd-fill{height:100%;background:var(--shell);border-radius:7px;transition:width .2s}
 .caticon{width:26px;height:26px;vertical-align:middle;flex:none}
 .smove-top .caticon{width:24px;height:24px}
+.export-prev{font:500 14px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--ink);max-height:none;margin:0}
+#xWarn{color:#9b1c1c;font-weight:600}
+#sheetBody [data-xk][aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
