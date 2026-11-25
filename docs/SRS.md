@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| Version | 1.2 (matches app build 14) |
+| Version | 1.3 (matches app build 15) |
 | Date | 26 November 2026 |
 | Owner | htiekk0k |
 | Status | Baseline: describes the implemented system |
@@ -300,6 +300,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-12.1 | A rules picker shall offer Champions and Gen IX–I (only generations where the Pokémon exists). | H |
 | FR-12.2 | A *Battle format* picker shall list every format with set data for the chosen rules (from the index), split into "Sets for {Pokémon}" and "Other formats", plus Random Battle (Gen I–IX) and Random Doubles (Gen VIII–IX). | H |
 | FR-12.3 | Each set shall show item, ability, nature, Tera type, EVs, IVs, level and moves; slash options shall be kept. | H |
+| FR-12.3a | Each move in a set (and in Random Battle move pools) shall show its type, category, power, accuracy, PP and, when non-zero, a priority badge (e.g. *Priority +1*); tapping it shall show the move's effect. Slash options shall appear as separate rows joined by "or". | H |
 | FR-12.4 | *Copy for Showdown* shall copy the set in Showdown import format, using the first option of each slash choice. | M |
 | FR-12.5 | *Make this my default* shall store the rules and format; Settings shall also allow choosing default rules ("Latest generation (Gen IX)" or a specific one) and a default format. | H |
 | FR-12.6 | If the chosen format has no sets for the Pokémon, the tab shall say so and list the formats that do. | M |
@@ -395,7 +396,7 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | UC-06 View Pokémon page | FR-7, FR-8, FR-10, FR-13 |
 | UC-07 Read entry aloud | FR-9.1–9.3 |
 | UC-08 View moves for a game | FR-11.1–11.5 |
-| UC-09 View Smogon sets | FR-12.1–12.4, 12.6–12.7 |
+| UC-09 View Smogon sets | FR-12.1–12.4 (incl. 12.3a), 12.6–12.7 |
 | UC-10 Set default rules & format | FR-12.5, FR-14 |
 | UC-11 Manage settings & saved data | FR-9.3, FR-14, FR-15 |
 | UC-12 Update the app | FR-16.1–16.8 |

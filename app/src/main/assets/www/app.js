@@ -604,6 +604,13 @@ function moveRow(db, r, showLv, gen) {
     <td>${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}</td>
     <td class="r">${m.bp}</td><td class="r">${m.acc}</td></tr>`;
 }
+async function moveEffect(slug) {
+  try {
+    const mv = await getJSON(API + 'move/' + slug);
+    const eff = en(mv.effect_entries)[0];
+    return (eff ? eff.short_effect.replace(/\$effect_chance/g, mv.effect_chance ?? '') : ((en(mv.flavor_text_entries).pop() || {}).flavor_text || 'No description.')).replace(/\s+/g, ' ');
+  } catch (err) { return 'Couldn’t load the description (offline?).'; }
+}
 async function toggleMove(tr) {
   const next = tr.nextElementSibling;
   if (next && next.classList.contains('expand')) { next.remove(); return; }
@@ -615,12 +622,7 @@ async function toggleMove(tr) {
   let db = {};
   try { db = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { /* ignore */ }
   const info = moveInfo(db, slug, cur && cur.vg ? vgGen(cur.vg) : 9);
-  let text = '';
-  try {
-    const mv = await getJSON(API + 'move/' + slug);
-    const eff = en(mv.effect_entries)[0];
-    text = eff ? eff.short_effect.replace(/\$effect_chance/g, mv.effect_chance ?? '') : ((en(mv.flavor_text_entries).pop() || {}).flavor_text || '');
-  } catch (err) { text = 'Couldn’t load the description (offline?).'; }
+  const text = await moveEffect(slug);
   ex.firstElementChild.innerHTML = `${info.cat ? `<b>${info.cat}</b>` : ''}${info.pp ? ` · PP ${info.pp}` : ''}${info.pri ? ` · Priority ${info.pri > 0 ? '+' : ''}${info.pri}` : ''}<br>${esc(text.replace(/\s+/g, ' '))}`;
 }
 
@@ -678,6 +680,8 @@ async function paneSmogon(pane) {
   let data = {}, loadErr = null;
   try { data = await getJSON(`https://data.pkmn.cc/sets/${rules}.json`, 3 * DAY); } catch (err) { loadErr = err; }
   const indexFormats = await formatsFor(rules);
+  try { smogonMoves = await getJSON(SD + 'moves.json', 30 * DAY); } catch (err) { smogonMoves = {}; }
+  smogonGenN = rules === 'champions' ? 9 : +rules.slice(3);
   if (my !== token || cur.tab !== 'smogon') return;
 
   // <rules>.json is species → format → set name → set (older files may be format → species).
@@ -718,6 +722,28 @@ async function paneSmogon(pane) {
     : `<div class="msg"><b>No ${esc(D.tierLabel(fmt))} sets</b>Smogon hasn’t written ${esc(D.tierLabel(fmt))} sets for ${esc(displayName(e))} under these rules.${withSets.length ? ` It has sets in: ${withSets.map(f => esc(D.tierLabel(f))).join(', ')}.` : ''}</div>`) +
     `<div style="text-align:center">${linkBtn}</div>`;
 }
+// Move details inside a set: type, category, power, accuracy, PP, priority; tap for the effect.
+let smogonMoves = {}, smogonGenN = 9;
+const moveApiSlug = name => String(name).toLowerCase().replace(/[’'.,:]/g, '').replace(/\s+/g, '-');
+function setMoveRow(name) {
+  const m = moveInfo(smogonMoves, toID(name), smogonGenN);
+  const known = !!smogonMoves[toID(name)];
+  const pri = m.pri ? `<span class="pri ${m.pri > 0 ? 'up' : 'down'}">Priority ${m.pri > 0 ? '+' : ''}${m.pri}</span>` : '';
+  const stats = known ? [m.cat === 'Status' ? 'Status' : m.cat + ' · Power ' + m.bp, 'Accuracy ' + (m.acc === '—' ? '—' : m.acc + '%'), 'PP ' + (m.pp ?? '—')].join(' · ') : '';
+  return `<button type="button" class="smove" data-smove="${esc(moveApiSlug(name))}">
+    <span class="smove-top"><b>${esc(name)}</b>${m.type ? tb(m.type) : ''}${m.cat ? `<span class="cat ${m.cat}" title="${m.cat}"></span>` : ''}${pri}</span>
+    ${stats ? `<span class="smove-stats">${stats}</span>` : ''}<span class="smove-desc" hidden></span></button>`;
+}
+function setMovesHTML(moves) {
+  return `<ol class="set-moves">${(moves || []).map(m => `<li>${(Array.isArray(m) ? m : [m]).map(setMoveRow).join('<span class="or">or</span>')}</li>`).join('')}</ol>`;
+}
+async function toggleSetMove(btn) {
+  const d = btn.querySelector('.smove-desc');
+  if (!d.hidden) { d.hidden = true; return; }
+  d.hidden = false;
+  if (!d.textContent) { d.textContent = 'Loading…'; d.textContent = await moveEffect(btn.dataset.smove); }
+}
+
 // Random Battle data: {level, abilities, items, moves, teraTypes} or {level, roles: {name: {...}}}
 function randbatsCard(r) {
   const list = v => Array.isArray(v) ? v.join(' / ') : (v ?? '');
@@ -726,8 +752,7 @@ function randbatsCard(r) {
       ${x.abilities ? `<div><b>Ability</b>${esc(list(x.abilities))}</div>` : ''}
       ${x.items ? `<div><b>Item</b>${esc(list(x.items))}</div>` : ''}
       ${x.teraTypes ? `<div><b>Tera</b>${esc(list(x.teraTypes))}</div>` : ''}
-    </div><h4 style="margin-top:10px;font-size:14px">Possible moves</h4>
-    <div class="games" style="flex-wrap:wrap;margin:0">${(x.moves || []).map(m => `<span class="chip" style="min-height:30px;display:inline-flex;align-items:center">${esc(m)}</span>`).join('')}</div></section>`;
+    </div><h4 style="margin-top:12px;font-size:14px">Possible moves</h4>${setMovesHTML(x.moves)}</section>`;
   if (r.roles) return Object.entries(r.roles).map(([n, x]) => block(n, x)).join('');
   return block('Random set', r);
 }
@@ -742,7 +767,7 @@ function setCard(setName, s, i) {
       ${line('IVs', s.ivs ? fmtSpread(s.ivs) : '')}
       ${line('Level', s.level !== undefined ? fmtVal(s.level) : '')}
     </div>
-    <ol class="set-moves">${(s.moves || []).map(m => `<li>${esc(Array.isArray(m) ? m.join(' / ') : m)}</li>`).join('')}</ol>
+    ${setMovesHTML(s.moves)}
     <div class="set-actions"><button type="button" class="btn" data-copyset="${i}"><svg><use href="#i-copy"/></svg>Copy for Showdown</button></div>
   </section>`;
 }
@@ -1076,6 +1101,8 @@ function lensBackSheet() {
 document.addEventListener('click', ev => {
   const tr = ev.target.closest('tr.mrow');
   if (tr) { toggleMove(tr); return; }
+  const sm = ev.target.closest('.smove');
+  if (sm) { toggleSetMove(sm); return; }
   const t = ev.target.closest('button, [data-act]');
   if (!t) return;
   const d = t.dataset;
