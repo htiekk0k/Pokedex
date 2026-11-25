@@ -82,9 +82,9 @@ svg{width:24px;height:24px;fill:currentColor;flex:none}
 
 .hero{background:var(--shell);padding:4px 16px 18px;color:#fff}
 .screen-frame{background:var(--bezel);border-radius:16px 16px 16px 36px;padding:12px 12px 14px}
-.screen-frame .lcd{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:4/3;max-height:320px;width:100%;display:grid;place-items:center;background:radial-gradient(circle at 50% 60%,rgba(255,255,255,.95) 0,rgba(255,255,255,.55) 45%,transparent 75%),var(--tint,#cfd8dc)}
-.lcd img{width:82%;height:82%;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(0,0,0,.25))}
-.lcd .dexno{position:absolute;left:10px;top:8px;font:700 15px var(--display);color:rgba(0,0,0,.55)}
+.screen-frame .lcd{position:relative;border-radius:10px;overflow:hidden;width:100%;height:clamp(220px,62vw,340px);display:grid;place-items:center;background:radial-gradient(circle at 50% 60%,rgba(255,255,255,.95) 0,rgba(255,255,255,.55) 45%,transparent 75%),var(--tint,#cfd8dc)}
+.lcd img{position:absolute;inset:8% 9% 6%;width:82%;height:86%;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(0,0,0,.25))}
+.lcd .dexno{position:absolute;z-index:1;left:10px;top:8px;font:700 15px var(--display);color:rgba(0,0,0,.55)}
 .frame-foot{display:flex;align-items:center;gap:10px;margin-top:10px}
 .frame-foot .dot{width:14px;height:14px;border-radius:50%;background:var(--led-r);box-shadow:0 0 0 2px rgba(0,0,0,.3)}
 .frame-foot .dot.on{animation:blink .45s steps(2) infinite}
