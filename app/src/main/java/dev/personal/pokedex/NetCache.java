@@ -31,9 +31,12 @@ class NetCache {
         dir.mkdirs();
     }
 
-    WebResourceResponse fetch(String url, long ttlSeconds) {
+    WebResourceResponse fetch(String url, long ttlSeconds) { return fetch(url, ttlSeconds, 0); }
+
+    /** width > 0: images are shrunk to that many pixels wide before saving (small, fast thumbnails). */
+    WebResourceResponse fetch(String url, long ttlSeconds, int width) {
         if (url == null || !url.startsWith("https://")) return error(400, "Bad url");
-        String key = sha1(url);
+        String key = sha1(width > 0 ? url + "#w" + width : url);
         File body = new File(dir, key);
         File meta = new File(dir, key + ".type");
 
@@ -58,10 +61,18 @@ class NetCache {
             String type = c.getContentType();
             if (type == null) type = mimeFor(url);
             File tmp = File.createTempFile(key, ".part", dir);
-            try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(tmp)) {
-                byte[] buf = new byte[16384];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            if (width > 0 && type.startsWith("image/")) {
+                byte[] raw;
+                try (InputStream in = c.getInputStream()) { raw = readAll(in); }
+                byte[] small = shrink(raw, width);
+                if (small != null) { raw = small; type = "image/png"; }
+                try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(raw); }
+            } else {
+                try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(tmp)) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
             }
             try (FileOutputStream out = new FileOutputStream(meta)) {
                 out.write(type.getBytes(StandardCharsets.UTF_8));
@@ -136,6 +147,39 @@ class NetCache {
         if (p.endsWith(".webp")) return "image/webp";
         if (p.endsWith(".woff2")) return "font/woff2";
         return "application/octet-stream";
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[16384];
+        int n;
+        while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+        return bos.toByteArray();
+    }
+
+    /** Downscale an image to the given width (keeps transparency). Returns null if it can't. */
+    private static byte[] shrink(byte[] raw, int width) {
+        try {
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.length, o);
+            if (o.outWidth <= 0 || o.outWidth <= width) return null;
+            int sample = 1;
+            while (o.outWidth / (sample * 2) >= width) sample *= 2;
+            android.graphics.BitmapFactory.Options d = new android.graphics.BitmapFactory.Options();
+            d.inSampleSize = sample;
+            android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.length, d);
+            if (b == null) return null;
+            int h = Math.max(1, Math.round(b.getHeight() * (width / (float) b.getWidth())));
+            android.graphics.Bitmap s = android.graphics.Bitmap.createScaledBitmap(b, width, h, true);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            s.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bos);
+            if (s != b) s.recycle();
+            b.recycle();
+            return bos.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private static String readSmall(File f) throws IOException {

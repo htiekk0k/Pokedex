@@ -70,13 +70,19 @@ function formeLabel(e) {
   if (f === 'Gmax') return 'Gigantamax';
   return f.replace(/-/g, ' ') + ' form';
 }
+// Official artwork (same as the Pokémon's page); falls back to a sprite if a form has none.
+const ART = id => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/' + id + '.png';
 function spriteOf(e) {
-  const pkapi = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/' + e.num + '.png';
   const sd = 'https://play.pokemonshowdown.com/sprites/gen5/' + toID(e.base) + (e.forme ? '-' + toID(e.forme) : '') + '.png';
-  return e.forme ? [sd, pkapi] : [pkapi, sd];
+  return [ART(e.pid || e.num), sd];
 }
-const imgTag = (urls, alt, cls = '') =>
-  `<img class="${cls}" loading="lazy" alt="${esc(alt)}" src="${imgUrl(urls[0])}"${urls[1] ? ` data-fb="${imgUrl(urls[1])}"` : ''}>`;
+const pokeSlug = name => name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.'’:%]/g, '')
+  .replace(/\s+/g, '-').replace(/-+/g, '-');
+// w = thumbnail width in pixels (the app shrinks and saves it); 0 = full size
+const imgTag = (urls, alt, w = 0, cls = '') => {
+  const u = x => netUrl(x, -1) + (w ? '&w=' + w : '');
+  return `<img class="${cls}" loading="lazy" alt="${esc(alt)}" src="${u(urls[0])}"${urls[1] ? ` data-fb="${u(urls[1])}"` : ''}>`;
+};
 document.addEventListener('error', ev => {
   const t = ev.target;
   if (t && t.tagName === 'IMG' && t.dataset.fb) { const fb = t.dataset.fb; delete t.dataset.fb; t.src = fb; }
@@ -98,6 +104,17 @@ async function loadIndex() {
       evos: (e.evos || []).length > 0, prevo: !!e.prevo});
   }
   out.sort((a, b) => a.num - b.num || (a.forme ? 1 : 0) - (b.forme ? 1 : 0));
+  try {
+    const all = await getJSON(API + 'pokemon?limit=3000', 30 * DAY);
+    const ids = new Map((all.results || []).map(r => [r.name, idFromUrl(r.url)]));
+    const names = [...ids.keys()];
+    for (const e of out) {
+      if (!e.forme) continue;
+      const slug = pokeSlug(e.name);
+      const hit = ids.get(slug) || ids.get(names.find(n => n.startsWith(slug + '-')));
+      if (hit) e.pid = hit;
+    }
+  } catch (err) { /* forms fall back to their base artwork */ }
   INDEX = out;
   for (const e of out) {
     BYID[e.id] = e;
@@ -196,7 +213,7 @@ function renderList(reset) {
   $('#count').innerHTML = `${list.length.toLocaleString()} Pokémon${esc(sortLabel)}${n || F.sort !== 'num' ? ` · <button type="button" class="linkish" data-act="filters-reset">Clear</button>` : ''}`;
   const stat = F.sort in STAT_SHORT ? F.sort : null;
   $('#list').innerHTML = list.slice(0, limit).map(e => `<li><button type="button" class="dex-row" data-id="${e.id}">
-      ${imgTag(spriteOf(e), e.name)}
+      ${imgTag(spriteOf(e), e.name, 168)}
       <span class="meta"><span class="num">${pad(e.num)}${stat ? ` · <b class="statv">${STAT_SHORT[stat]} ${stat === 'bst' ? e.bst : (e.bs[stat] || 0)}</b>` : ''}</span><span class="nm">${esc(e.forme ? displayName(e) : e.name)}${e.forme ? `<small>${esc(formeLabel(e))}</small>` : ''}</span></span>
       <span class="types">${e.types.map(tb).join('')}</span></button></li>`).join('');
   $('#homeMsg').innerHTML = list.length ? '' :
@@ -359,7 +376,7 @@ function heroHTML() {
   const types = pokemon ? typesAt(pokemon, S.gen) : D.typesInGen(e.types, S.gen);
   const other = pokemon && pokemon.sprites && pokemon.sprites.other;
   const art = other && ((other['official-artwork'] || {}).front_default || (other.home || {}).front_default);
-  const urls = art ? [art, spriteOf(e)[0]] : spriteOf(e);
+  const urls = art ? [art, spriteOf(e)[1]] : spriteOf(e);
   const forms = BASES[e.base] || [];
   const genus = species ? genusOf(species) : '';
   return `<section class="hero">
@@ -786,7 +803,7 @@ async function paneEvo(pane) {
   const mon = n => {
     const num = idFromUrl(n.species.url), e = BYNUM[num];
     if (!e) return '';
-    return `<button type="button" class="evo-mon${num === curNum ? ' cur' : ''}" data-go="${e.id}">${imgTag(spriteOf(e), e.name)}<span>${esc(e.name)}</span><small>${pad(num)}</small></button>`;
+    return `<button type="button" class="evo-mon${num === curNum ? ' cur' : ''}" data-go="${e.id}">${imgTag(spriteOf(e), e.name, 216)}<span>${esc(e.name)}</span><small>${pad(num)}</small></button>`;
   };
   const node = n => {
     const kids = (n.evolves_to || []).filter(visible);
@@ -898,7 +915,7 @@ function handleFound(cands, rawText) {
   }
   if (cands.length === 1 || cands[0].s >= cands[1].s * 1.3) { closeSheet(); go(cands[0].e.id, true); return; }
   openSheet(`<h2>Which one?</h2><div class="pick-list">${cands.slice(0, 8).map(({e}) => `<button type="button" class="dex-row" data-pick="${e.id}">
-      ${imgTag(spriteOf(e), e.name)}<span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(displayName(e))}</span></span>
+      ${imgTag(spriteOf(e), e.name, 168)}<span class="meta"><span class="num">${pad(e.num)}</span><span class="nm">${esc(displayName(e))}</span></span>
       <span class="types">${e.types.map(tb).join('')}</span></button>`).join('')}</div>`);
 }
 

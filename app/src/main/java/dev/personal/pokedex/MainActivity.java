@@ -462,7 +462,7 @@ public class MainActivity extends Activity {
             if (path.equals("/net")) {
                 String target = u.getQueryParameter("u");
                 long ttl = parseLong(u.getQueryParameter("ttl"), 7L * 24 * 3600);
-                return net.fetch(target, ttl);
+                return net.fetch(target, ttl, (int) parseLong(u.getQueryParameter("w"), 0));
             }
             String asset = path.equals("/") ? "index.html" : path.substring(1);
             try {
