@@ -171,17 +171,23 @@ sequenceDiagram
     Activity->>UI: onNative({type:'updateProgress', pct})
   end
   Activity->>Activity: save cache/updates/Pokedex.apk
-  alt install permission granted
-    Activity->>PI: ACTION_VIEW APK (FileProvider URI)
-  else not yet granted
+  opt install permission not yet granted
     Activity->>UI: onNative({type:'updatePermission'})
     Activity->>User: open "Install unknown apps" for Pokédex
     User->>Activity: allow, then back (onResume)
-    Activity->>PI: ACTION_VIEW APK
   end
+  Activity->>PI: createSession · write base.apk · commit(status PendingIntent)
+  PI-->>Activity: onNewIntent(INSTALL_STATUS = PENDING_USER_ACTION, confirm intent)
+  Activity->>PI: startActivity(confirm intent)
+  Activity->>UI: onNative({type:'updateConfirm'})
   PI-->>User: "Update this app?"
-  User->>PI: Update
-  PI->>PI: replace APK in place (same key → data kept)
+  alt User taps Update
+    PI->>PI: replace APK in place (same key → data kept)
+  else User cancels
+    PI-->>Activity: INSTALL_STATUS = FAILURE_ABORTED
+    Activity->>UI: onNative({type:'updateCancelled'}) → "Install now"
+  end
+  Note over UI,Activity: "Open installer" re-runs the install from the saved file
 ```
 
 ## S-5 Smogon tab

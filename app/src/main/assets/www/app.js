@@ -1084,7 +1084,14 @@ function handleUpdateEvent(ev) {
       else if (!ev.quiet) openSheet(`<h2>You’re up to date</h2><p>Build ${ev.current} is the latest version.</p>`);
       return;
     case 'updateProgress': progressSheet(ev.pct, ev.done, ev.total); return;
-    case 'updateReady': openSheet('<h2>Installing…</h2><p>Android’s installer will open. Tap <b>Update</b> to finish. The app restarts on the new version with your data kept.</p>'); return;
+    case 'updateReady': openSheet(`<h2>Installing…</h2><p>Handing the update to Android. Its installer will ask you to confirm.</p>
+      <p class="note">If nothing appears within a few seconds, tap <b>Open installer</b>. The download is kept, so it won’t download again.</p>
+      <div class="pick-list"><button type="button" class="btn ghost" data-act="update-install">Open installer</button></div>`); return;
+    case 'updateConfirm': openSheet(`<h2>Confirm the update</h2><p>Tap <b>Update</b> in Android’s window. The app restarts on the new version with your settings and data kept.</p>
+      <div class="pick-list"><button type="button" class="btn ghost" data-act="update-install">Show it again</button></div>`); return;
+    case 'updateCancelled': openSheet(`<h2>Update not installed</h2><p>The install was cancelled. You can try again; the download is kept.</p>
+      <div class="pick-list"><button type="button" class="btn red" data-act="update-install">Install now</button></div>`); return;
+    case 'updateDone': openSheet('<h2>Updated</h2><p>The new version is installed.</p>'); return;
     case 'updatePermission': openSheet(`<h2>One-time permission</h2><p>Android needs your OK for Pokédex to install updates. On the next screen turn on <b>Allow from this source</b>, then come back. The install continues on its own.</p>
       <div class="pick-list"><button type="button" class="btn red" data-act="update-install">I’ve allowed it. Install</button></div>`); return;
     case 'updateError': openSheet(`<h2>Update failed</h2><p>${esc(ev.message || 'Something went wrong.')}</p><div class="pick-list"><button type="button" class="btn" data-act="update-check">Try again</button></div>`); return;
@@ -1198,7 +1205,7 @@ document.addEventListener('click', ev => {
     case 'update-check': checkForUpdates(false); break;
     case 'update-show': if (updateInfo) updateSheet(updateInfo); break;
     case 'update-go': if (N && updateInfo && updateInfo.url) { progressSheet(0, 0, updateInfo.size || 0); N.downloadUpdate(updateInfo.url); } break;
-    case 'update-install': closeSheet(); if (N) N.installUpdate(); break;
+    case 'update-install': if (N) { openSheet('<h2>Opening installer…</h2>'); N.installUpdate(); } break;
     case 'filters': filterSheet(); break;
     case 'filters-reset': F = F0(); if (!$('#sheet').hidden && $('#fShow')) filterSheet(); renderTypeFilter(); renderList(true); break;
     case 'pick-ver': {

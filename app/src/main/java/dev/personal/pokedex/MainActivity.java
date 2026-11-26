@@ -1,6 +1,8 @@
 package dev.personal.pokedex;
 
 import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.pm.PackageInstaller;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -70,6 +72,7 @@ public class MainActivity extends Activity {
 
     /** GitHub repository whose Releases hold the APK (in-app updates). */
     private static final String UPDATE_REPO = "htiekk0k/Pokedex";
+    private static final String ACTION_INSTALL_STATUS = "dev.personal.pokedex.INSTALL_STATUS";
     private boolean pendingInstall = false;
 
     private WebView web;
@@ -279,7 +282,38 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+        // Preferred: an installer session. Android answers through onNewIntent
+        // (needs confirmation / success / failure), so the app never waits blindly.
+        new Thread(() -> {
+            try {
+                PackageInstaller pi = getPackageManager().getPackageInstaller();
+                PackageInstaller.SessionParams params =
+                        new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                params.setAppPackageName(getPackageName());
+                params.setSize(f.length());
+                int id = pi.createSession(params);
+                try (PackageInstaller.Session session = pi.openSession(id)) {
+                    try (java.io.OutputStream out = session.openWrite("base.apk", 0, f.length());
+                         InputStream in = new java.io.FileInputStream(f)) {
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                        session.fsync(out);
+                    }
+                    Intent status = new Intent(this, MainActivity.class).setAction(ACTION_INSTALL_STATUS);
+                    int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                    PendingIntent pending = PendingIntent.getActivity(this, 7, status, flags);
+                    session.commit(pending.getIntentSender());
+                }
+            } catch (Exception e) {
+                // Fallback: classic "open this APK" request.
+                runOnUiThread(this::installWithViewIntent);
+            }
+        }).start();
+    }
+
+    private void installWithViewIntent() {
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", updateFile());
         Intent i = new Intent(Intent.ACTION_VIEW);
         i.setDataAndType(uri, "application/vnd.android.package-archive");
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -287,6 +321,31 @@ public class MainActivity extends Activity {
             startActivity(i);
         } catch (ActivityNotFoundException e) {
             emit(evt("updateError").put2("message", "Android's installer couldn't be opened."));
+        }
+    }
+
+    /** Result of an installer session (see installUpdateNow). */
+    private void handleInstallStatus(Intent intent) {
+        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
+            if (confirm != null) {
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(confirm);
+                    emit(evt("updateConfirm"));
+                    return;
+                } catch (ActivityNotFoundException ignored) { }
+            }
+            installWithViewIntent();
+        } else if (status == PackageInstaller.STATUS_SUCCESS) {
+            emit(evt("updateDone"));
+        } else if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
+            emit(evt("updateCancelled"));
+        } else {
+            String msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+            emit(evt("updateError").put2("message", "Android couldn't install the update"
+                    + (msg == null || msg.isEmpty() ? "." : ": " + msg)));
         }
     }
 
@@ -380,6 +439,11 @@ public class MainActivity extends Activity {
     private void handleIntent(Intent i) {
         if (i == null || i.getAction() == null) return;
         String action = i.getAction();
+        if (ACTION_INSTALL_STATUS.equals(action)) {
+            handleInstallStatus(i);
+            i.setAction(null);
+            return;
+        }
         if (Intent.ACTION_SEND.equals(action)) {
             String type = i.getType();
             if (type != null && type.startsWith("image/")) {

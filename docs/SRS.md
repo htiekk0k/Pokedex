@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| Version | 1.5 (matches app build 19) |
+| Version | 1.6 (matches app build 21) |
 | Date | 26 November 2026 |
 | Owner | htiekk0k |
 | Status | Baseline: describes the implemented system |
@@ -176,7 +176,7 @@ The app has a single local user; there are no roles or permissions.
 | SI-9 | Intents received: `ACTION_SEND` (text/plain, image/*), `ACTION_PROCESS_TEXT` | Look up from other apps | Android intents |
 | SI-10 | ClipboardManager | Return path from Lens; copy Showdown sets | Android API |
 | SI-11 | GitHub REST API `GET /repos/htiekk0k/Pokedex/releases/latest` and release asset download | In-app updates | HTTPS, JSON + APK |
-| SI-12 | Android package installer (`ACTION_VIEW` `application/vnd.android.package-archive`) and *Install unknown apps* settings | Installing updates | Intent + FileProvider URI |
+| SI-12 | Android `PackageInstaller` session API (fallback: `ACTION_VIEW` `application/vnd.android.package-archive`) and *Install unknown apps* settings | Installing updates | Session + status `PendingIntent`; FileProvider URI for fallback |
 
 ### 3.4 Internal interface: JavaScript bridge
 The Java layer exposes `window.Native` to the UI and pushes events back with `window.onNative(event)`.
@@ -197,7 +197,7 @@ The Java layer exposes `window.Native` to the UI and pushes events back with `wi
 | Java → JS | `{type:'lensBack'}` | Returned from Lens with nothing new copied |
 | Java → JS | `{type:'tts', state}` | Speaking started / finished |
 | Java → JS | `{type:'busy'|'cancel'|'error', …}` | Progress and errors |
-| Java → JS | `{type:'update'|'updateProgress'|'updateReady'|'updatePermission'|'updateError', …}` | Update check result, download progress, install state |
+| Java → JS | `{type:'update'|'updateProgress'|'updateReady'|'updatePermission'|'updateConfirm'|'updateCancelled'|'updateDone'|'updateError', …}` | Update check result, download progress, install state |
 | WebView → Java | `GET /net?u={url}&ttl={s}&w={px}` | Cached fetch (NetCache) |
 
 ---
@@ -332,7 +332,8 @@ Priorities: **H** = must have, **M** = should have, **L** = nice to have.
 | FR-16.2 | Checking shall read the latest GitHub Release, take the build number from its tag (`build-N`) and compare it with the installed version code. | H |
 | FR-16.3 | If newer, the app shall show the new build number, download size and the release's change description ("What's new"), with *Download and install* and *Later*. Otherwise it shall say the app is up to date. | H |
 | FR-16.4 | The download shall only be accepted from `https://github.com/htiekk0k/Pokedex/…`, show live progress and be stored in the app's private cache. | H |
-| FR-16.5 | The app shall hand the APK to Android's package installer. If installing from this app isn't allowed yet, it shall explain the one-time permission, open the *Install unknown apps* screen, and continue automatically on return. | H |
+| FR-16.5 | The app shall install the APK through a `PackageInstaller` session and react to its status: open the confirmation dialog on *pending user action*, report success, cancellation or the failure message. If the session can't be created it shall fall back to an `ACTION_VIEW` install request. If installing from this app isn't allowed yet, it shall explain the one-time permission, open the *Install unknown apps* screen and continue automatically on return. | H |
+| FR-16.5a | While installing, the app shall offer *Open installer*, which re-opens the installer from the already downloaded file without downloading again. | M |
 | FR-16.6 | Updates shall install in place (same package name and signing key) so settings and saved data are kept. | H |
 | FR-16.7 | When *Check automatically once a day* is on (default), the app shall check at most once per 20 hours on launch and show an *Update available* banner on the home screen instead of interrupting. | M |
 | FR-16.8 | Each release shall include the triggering commit message as its description. | M |
